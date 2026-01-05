@@ -236,7 +236,7 @@ class ObjectRestingEEGraspedEventCfg(ResetStatesBaseEventCfg):
         func=task_mdp.MultiResetManager,
         mode="reset",
         params={
-            "base_paths": [f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/Resets/ObjectPairs/ObjectAnywhereEEAnywhere"],
+            "base_paths": [f"./reset_state_datasets/ObjectAnywhereEEAnywhere"],
             "probs": [1.0],
         },
     )
@@ -245,7 +245,7 @@ class ObjectRestingEEGraspedEventCfg(ResetStatesBaseEventCfg):
         func=task_mdp.reset_end_effector_from_grasp_dataset,
         mode="reset",
         params={
-            "base_path": f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/GraspSampling/ObjectPairs",
+            "base_path": f"./grasp_datasets",
             "fixed_asset_cfg": SceneEntityCfg("insertive_object"),
             "robot_ik_cfg": SceneEntityCfg(
                 "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"
@@ -288,7 +288,7 @@ class ObjectAnywhereEEGraspedEventCfg(ResetStatesBaseEventCfg):
         func=task_mdp.reset_end_effector_from_grasp_dataset,
         mode="reset",
         params={
-            "base_path": f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/GraspSampling/ObjectPairs",
+            "base_path": f"./grasp_datasets",
             "fixed_asset_cfg": SceneEntityCfg("insertive_object"),
             "robot_ik_cfg": SceneEntityCfg(
                 "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"
@@ -312,7 +312,7 @@ class ObjectPartiallyAssembledEEAnywhereEventCfg(ResetStatesBaseEventCfg):
         func=task_mdp.reset_insertive_object_from_partial_assembly_dataset,
         mode="reset",
         params={
-            "base_path": f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/PartialAssemblies/ObjectPairs",
+            "base_path": f"./partial_assembly_datasets",
             "insertive_object_cfg": SceneEntityCfg("insertive_object"),
             "receptive_object_cfg": SceneEntityCfg("receptive_object"),
             "pose_range_b": {
@@ -353,7 +353,7 @@ class ObjectPartiallyAssembledEEGraspedEventCfg(ResetStatesBaseEventCfg):
         func=task_mdp.reset_insertive_object_from_partial_assembly_dataset,
         mode="reset",
         params={
-            "base_path": f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/PartialAssemblies/ObjectPairs",
+            "base_path": f"./partial_assembly_datasets",
             "insertive_object_cfg": SceneEntityCfg("insertive_object"),
             "receptive_object_cfg": SceneEntityCfg("receptive_object"),
             "pose_range_b": {
@@ -371,7 +371,7 @@ class ObjectPartiallyAssembledEEGraspedEventCfg(ResetStatesBaseEventCfg):
         func=task_mdp.reset_end_effector_from_grasp_dataset,
         mode="reset",
         params={
-            "base_path": f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/GraspSampling/ObjectPairs",
+            "base_path": f"./grasp_datasets",
             "fixed_asset_cfg": SceneEntityCfg("insertive_object"),
             "robot_ik_cfg": SceneEntityCfg(
                 "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"
