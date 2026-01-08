@@ -1,3 +1,11 @@
+.venv/
+mydocker/
+checkpoints/
+grasp_datasets/
+partial_assembly_datasets/
+reset_state_datasets/
+exports/
+wandb/
 # ignore .git related folders
 .git/
 .github/

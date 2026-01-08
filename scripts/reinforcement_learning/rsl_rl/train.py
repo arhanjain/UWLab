@@ -8,6 +8,7 @@
 """Launch Isaac Sim Simulator first."""
 
 import argparse
+import os
 import sys
 
 from isaaclab.app import AppLauncher
@@ -34,11 +35,53 @@ parser.add_argument("--export_io_descriptors", action="store_true", default=Fals
 parser.add_argument(
     "--ray-proc-id", "-rid", type=int, default=None, help="Automatically configured by Ray integration, otherwise None."
 )
+parser.add_argument(
+    "--config", type=str, default=None, help="Path to YAML config file for hyperparameters."
+)
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
+
+# Check for additional Hydra positional args from environment variable
+# This allows any orchestrator (SageMaker, local, etc.) to pass Hydra overrides
+# via environment variable when they can't be passed as command-line args
+extra_flags = os.environ.get("EXTRA_FLAGS", "")
+if extra_flags:
+    import shlex
+    hydra_args.extend(shlex.split(extra_flags))
+
+# Load config file early if provided to get task and other training params
+if args_cli.config is not None:
+    import yaml
+    config_path = args_cli.config
+    if not os.path.isabs(config_path):
+        config_path = os.path.abspath(config_path)
+
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+
+    print(f"[INFO] Loading config from: {config_path}")
+    with open(config_path, "r") as f:
+        config_data = yaml.safe_load(f)
+
+    # Override args_cli with training config values
+    if "training" in config_data:
+        training_config = config_data["training"]
+        for key, value in training_config.items():
+            if hasattr(args_cli, key):
+                # Only override if CLI arg wasn't explicitly set
+                current_value = getattr(args_cli, key)
+                # Check if it's a default value (None or False for most args)
+                if current_value is None or (isinstance(current_value, bool) and not current_value):
+                    setattr(args_cli, key, value)
+                    print(f"[INFO] Config override: {key} = {value}")
+            else:
+                print(f"[WARN] Unknown training config key: {key}")
+
+print(f"Extra flags: {os.environ.get('EXTRA_FLAGS')}")
+print(f"hydra args: {hydra_args}")
 
 # always enable cameras to record video
 if args_cli.video:
@@ -79,6 +122,7 @@ import gymnasium as gym
 import logging
 import os
 import torch
+import yaml
 from datetime import datetime
 
 from rsl_rl.runners import DistillationRunner, OnPolicyRunner
@@ -111,9 +155,68 @@ torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = False
 
 
+def apply_config_overrides(cfg, overrides: dict, prefix: str = ""):
+    """Apply configuration overrides from a dictionary to a config object.
+
+    Args:
+        cfg: The configuration object to update.
+        overrides: Dictionary of overrides with dot-notation keys (e.g., 'algorithm.learning_rate').
+        prefix: Current prefix for nested attributes (used internally for recursion).
+    """
+    for key, value in overrides.items():
+        # Handle dot-notation for nested attributes
+        if "." in key:
+            parts = key.split(".", 1)
+            attr_name = parts[0]
+            remaining = parts[1]
+
+            if hasattr(cfg, attr_name):
+                nested_cfg = getattr(cfg, attr_name)
+                apply_config_overrides(nested_cfg, {remaining: value}, prefix=f"{prefix}{attr_name}.")
+            else:
+                logger.warning(f"Attribute '{prefix}{attr_name}' not found in config, skipping override for '{prefix}{key}'")
+        else:
+            # Direct attribute assignment
+            if hasattr(cfg, key):
+                current_value = getattr(cfg, key)
+                # Try to preserve the type
+                if current_value is not None and not isinstance(value, type(current_value)):
+                    try:
+                        value = type(current_value)(value)
+                    except (ValueError, TypeError):
+                        logger.warning(f"Could not convert override value for '{prefix}{key}' to type {type(current_value)}, using original type")
+
+                setattr(cfg, key, value)
+                logger.info(f"Override applied: {prefix}{key} = {value}")
+            else:
+                logger.warning(f"Attribute '{prefix}{key}' not found in config, skipping")
+
+
 @hydra_task_config(args_cli.task, args_cli.agent)
 def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
     """Train with RSL-RL agent."""
+    # load and apply config file overrides if provided
+    if args_cli.config is not None:
+        config_path = args_cli.config
+        if not os.path.isabs(config_path):
+            config_path = os.path.abspath(config_path)
+
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(f"Config file not found: {config_path}")
+
+        logger.info(f"Loading hyperparameters from config file: {config_path}")
+        with open(config_path, "r") as f:
+            config_overrides = yaml.safe_load(f)
+
+        # Apply overrides to agent_cfg and env_cfg
+        if "agent" in config_overrides:
+            logger.info("Applying agent configuration overrides...")
+            apply_config_overrides(agent_cfg, config_overrides["agent"], prefix="agent.")
+
+        if "env" in config_overrides:
+            logger.info("Applying environment configuration overrides...")
+            apply_config_overrides(env_cfg, config_overrides["env"], prefix="env.")
+
     # override configurations with non-hydra CLI arguments
     agent_cfg = cli_args.update_rsl_rl_cfg(agent_cfg, args_cli)
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs

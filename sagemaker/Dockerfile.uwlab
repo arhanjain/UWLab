@@ -1,0 +1,53 @@
+# 763104351884.dkr.ecr.us-east-1.amazonaws.com/base:13.0.0-gpu-py312-cu130-ubuntu22.04-ec2
+
+####
+# Runtime Image 
+####
+FROM isaaclab-base:cu12
+# ARG AWS_REGION
+# FROM 763104351884.dkr.ecr.${AWS_REGION}.amazonaws.com/pytorch-training:2.9.0-gpu-py312-cu130-ubuntu22.04-sagemaker
+# COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+# COPY --from=isaaclab-base:latest /.venv /.venv
+
+RUN apt-get update && apt-get install -y \
+    ffmpeg 
+
+ENV UV_LINK_MODE=copy
+ENV VIRTUAL_ENV=/.venv
+ENV PATH="/.venv/bin:$PATH"
+
+RUN uv venv --python 3.11 $UV_PROJECT_ENVIRONMENT
+
+RUN uv pip install pybullet
+RUN uv pip install https://github.com/MiroPsota/torch_packages_builder/releases/download/pytorch3d-0.7.8/pytorch3d-0.7.8%2Bpt2.7.0cu128-cp311-cp311-linux_x86_64.whl
+# RUN uv pip install https://github.com/MiroPsota/torch_packages_builder/releases/download/pytorch3d-0.7.9/pytorch3d-0.7.9+pt2.9.1cu130-cp311-cp311-linux_x86_64.whl
+
+RUN uv pip uninstall isaaclab rsl-rl-lib
+RUN uv pip install --no-cache-dir --force-reinstall --no-deps "rsl-rl-lib @ git+https://github.com/zoctipus/rsl_rl.git@master"
+RUN uv pip install ml_dtypes==0.5.4
+RUN uv pip install wandb
+
+# Install sagemaker-training (needs build tools temporarily)
+RUN apt-get update && apt-get install -y build-essential gcc g++ \
+    && uv pip install sagemaker-training \
+    && apt-get remove -y build-essential gcc g++ \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN echo "yes" >> /.venv/lib/python3.11/site-packages/isaacsim/kit/EULA_ACCEPTED
+
+# COPY . /opt/ml/code
+COPY . /opt/ml/code
+WORKDIR /opt/ml/code
+# WORKDIR /opt/ml/code
+
+ENV PYTHONPATH=/opt/ml/code/source/uwlab:$PYTHONPATH
+ENV PYTHONPATH=/opt/ml/code/source/uwlab_assets:$PYTHONPATH
+ENV PYTHONPATH=/opt/ml/code/source/uwlab_rl:$PYTHONPATH
+ENV PYTHONPATH=/opt/ml/code/source/uwlab_tasks:$PYTHONPATH
+ENV PYTHONPATH=/opt/ml/code/_isaaclab/IsaacLab/source/isaaclab_rl/:$PYTHONPATH
+ENV PYTHONPATH=/opt/ml/code/_isaaclab/IsaacLab/source/isaaclab/:$PYTHONPATH
+ENV PYTHONPATH=/opt/ml/code/:$PYTHONPATH
+
+# CMD ["/bin/bash"]
+ENTRYPOINT ["/bin/bash", "/opt/ml/code/sagemaker/launch.sh"]

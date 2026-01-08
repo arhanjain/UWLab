@@ -30,6 +30,17 @@ from pytorch3d.structures import Meshes
 
 from .rigid_object_hasher import RigidObjectHasher
 
+# Initialize logger
+logger = logging.getLogger(__name__)
+
+# Try to import boto3 for S3 access
+try:
+    import boto3
+    from botocore.exceptions import ClientError, NoCredentialsError
+    BOTO3_AVAILABLE = True
+except ImportError:
+    BOTO3_AVAILABLE = False
+
 # ---- module-scope caches ----
 _PRIM_SAMPLE_CACHE: dict[tuple[str, int], np.ndarray] = {}  # (prim_hash, num_points) -> (N,3) in root frame
 _FINAL_SAMPLE_CACHE: dict[str, np.ndarray] = {}  # env_hash -> (num_points,3) in root frame
@@ -334,3 +345,184 @@ def compute_assembly_hash(*usd_paths: str) -> str:
 
     full_hash = hashlib.md5(combined.encode()).hexdigest()
     return full_hash
+
+
+def is_s3_url(url: str) -> bool:
+    """Check if a URL/URI is an S3 URL or URI.
+    
+    Supports both:
+    - S3 URLs: https://bucket.s3.region.amazonaws.com/path/to/file
+    - S3 URIs: s3://bucket-name/path/to/file
+    
+    Args:
+        url: The URL/URI to check
+        
+    Returns:
+        True if the URL/URI is an S3 URL or URI, False otherwise
+    """
+    return url.startswith("s3://") or (url.startswith("https://") and ".s3." in url)
+
+
+def download_from_s3(s3_path: str, download_dir: str, force_download: bool = True) -> str:
+    """Download a file from S3 using boto3 with authentication.
+    
+    This function supports both S3 URLs and S3 URIs:
+    - S3 URLs: https://bucket.s3.region.amazonaws.com/path/to/file.pt
+    - S3 URIs: s3://bucket-name/path/to/file.pt
+    
+    This function supports:
+    - SageMaker IAM roles (automatic credential detection)
+    - Local SSO profiles (via AWS_PROFILE environment variable or default profile)
+    - Standard AWS credentials (via ~/.aws/credentials or environment variables)
+    
+    Args:
+        s3_path: The S3 URL or URI
+        download_dir: Directory where the file should be downloaded
+        force_download: Whether to force re-download even if file exists locally
+        
+    Returns:
+        The local path to the downloaded file
+        
+    Raises:
+        ImportError: If boto3 is not installed
+        FileNotFoundError: If the file cannot be downloaded or accessed
+    """
+    if not BOTO3_AVAILABLE:
+        raise ImportError(
+            "boto3 is required for S3 downloads. Install it with: pip install boto3"
+        )
+    
+    # Handle S3 URI format (s3://bucket/key)
+    if s3_path.startswith("s3://"):
+        # Parse S3 URI: s3://bucket-name/path/to/file or s3://bucket-name/file
+        uri_path = s3_path[5:]  # Remove "s3://" prefix
+        if not uri_path:
+            raise ValueError(f"Invalid S3 URI (empty path): {s3_path}")
+        
+        parts = uri_path.split("/", 1)
+        if len(parts) == 2:
+            bucket, key = parts
+        elif len(parts) == 1:
+            # Only bucket name provided, which is invalid (need at least a key)
+            raise ValueError(f"Invalid S3 URI (no key specified): {s3_path}")
+        else:
+            raise ValueError(f"Unable to parse S3 URI: {s3_path}")
+        region = None  # Region will be auto-detected by boto3
+    else:
+        # Parse the S3 URL to extract bucket and key
+        parsed = urlparse(s3_path)
+        # Handle both virtual-hosted and path-style URLs
+        # e.g., https://bucket.s3.region.amazonaws.com/key or https://s3.region.amazonaws.com/bucket/key
+        hostname = parsed.netloc
+        
+        if ".s3." in hostname:
+            # Virtual-hosted style: bucket.s3.region.amazonaws.com
+            bucket = hostname.split(".s3.")[0]
+            key = parsed.path.lstrip("/")
+        else:
+            # Path-style: s3.region.amazonaws.com/bucket/key
+            path_parts = parsed.path.lstrip("/").split("/", 1)
+            if len(path_parts) == 2:
+                bucket, key = path_parts
+            else:
+                raise ValueError(f"Unable to parse S3 URL: {s3_path}")
+        
+        # Extract region from hostname if possible
+        region = None
+        if ".s3." in hostname:
+            # Try to extract region from hostname like bucket.s3.region.amazonaws.com
+            parts = hostname.split(".s3.")
+            if len(parts) > 1:
+                region_part = parts[1].split(".")[0]
+                # Check if it's a valid region format (e.g., us-west-2)
+                if "-" in region_part:
+                    region = region_part
+    
+    # Create download directory if it doesn't exist
+    if not os.path.exists(download_dir):
+        os.makedirs(download_dir, exist_ok=True)
+    
+    # Determine local file path
+    if s3_path.startswith("s3://"):
+        file_name = os.path.basename(key) if key else "file"
+    else:
+        parsed = urlparse(s3_path)
+        file_name = os.path.basename(key) if key else os.path.basename(parsed.path)
+    local_file_path = os.path.join(download_dir, file_name)
+    
+    # Check if file already exists
+    if os.path.exists(local_file_path) and not force_download:
+        return os.path.abspath(local_file_path)
+    
+    # Initialize boto3 S3 client
+    # boto3 will automatically use credentials from:
+    # 1. IAM role (in SageMaker/EC2)
+    # 2. AWS_PROFILE environment variable
+    # 3. Default profile
+    # 4. Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+    # 5. ~/.aws/credentials file
+    try:
+        if region:
+            s3_client = boto3.client("s3", region_name=region)
+        else:
+            # Try to get region from environment or use default
+            s3_client = boto3.client("s3")
+    except NoCredentialsError:
+        raise FileNotFoundError(
+            f"No AWS credentials found. Please configure credentials using one of:\n"
+            f"  - IAM role (for SageMaker/EC2)\n"
+            f"  - AWS_PROFILE environment variable\n"
+            f"  - AWS credentials file (~/.aws/credentials)\n"
+            f"  - Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)"
+        )
+    
+    # Download the file
+    try:
+        logger.info(f"Downloading {s3_path} to {local_file_path}")
+        s3_client.download_file(bucket, key, local_file_path)
+        logger.info(f"Successfully downloaded {s3_path} to {local_file_path}")
+        return os.path.abspath(local_file_path)
+    except ClientError as e:
+        error_code = e.response.get("Error", {}).get("Code", "Unknown")
+        if error_code == "NoSuchKey":
+            raise FileNotFoundError(f"S3 object not found: {s3_path}")
+        elif error_code == "403":
+            raise FileNotFoundError(
+                f"Access denied to S3 object: {s3_path}. "
+                f"Please check your AWS credentials and permissions."
+            )
+        else:
+            raise FileNotFoundError(f"Failed to download from S3: {s3_path}. Error: {e}")
+    except Exception as e:
+        raise FileNotFoundError(f"Unexpected error downloading from S3: {s3_path}. Error: {e}")
+
+
+def retrieve_file_path_with_s3_support(
+    path: str, download_dir: str | None = None, force_download: bool = True
+) -> str:
+    """Retrieve file path with support for S3 URLs and URIs using authenticated downloads.
+    
+    This is a wrapper around retrieve_file_path that adds S3 support. If the path
+    is an S3 URL or URI, it will use boto3 to download with authentication. Otherwise,
+    it falls back to the standard retrieve_file_path function.
+    
+    Supports:
+    - S3 URLs: https://bucket.s3.region.amazonaws.com/path/to/file
+    - S3 URIs: s3://bucket-name/path/to/file
+    
+    Args:
+        path: The path to the file (local, Nucleus, S3 URL, or S3 URI)
+        download_dir: Directory where files should be downloaded
+        force_download: Whether to force re-download
+        
+    Returns:
+        The local path to the file
+    """
+    # Check if it's an S3 URL or URI
+    if is_s3_url(path):
+        if download_dir is None:
+            download_dir = tempfile.gettempdir()
+        return download_from_s3(path, download_dir, force_download)
+    else:
+        # Use the standard retrieve_file_path for local/Nucleus files
+        return retrieve_file_path(path, download_dir, force_download)
