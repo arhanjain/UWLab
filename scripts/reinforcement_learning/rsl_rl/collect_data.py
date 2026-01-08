@@ -3,16 +3,12 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Script to play a checkpoint from a wandb run using RSL-RL."""
+"""Script to play a checkpoint if an RL agent from RSL-RL."""
 
 """Launch Isaac Sim Simulator first."""
 
 import argparse
-import os
 import sys
-import tempfile
-
-import wandb
 
 from isaaclab.app import AppLauncher
 
@@ -20,8 +16,7 @@ from isaaclab.app import AppLauncher
 import cli_args  # isort: skip
 
 # add argparse arguments
-parser = argparse.ArgumentParser(description="Play an RL agent checkpoint from wandb using RSL-RL.")
-parser.add_argument("--wandb_run_path", type=str, required=True, help="Wandb run path in format: entity/project/run_id")
+parser = argparse.ArgumentParser(description="Train an RL agent with RSL-RL.")
 parser.add_argument("--video", action="store_true", default=False, help="Record videos during training.")
 parser.add_argument("--video_length", type=int, default=200, help="Length of the recorded video (in steps).")
 parser.add_argument(
@@ -33,6 +28,11 @@ parser.add_argument(
     "--agent", type=str, default="rsl_rl_cfg_entry_point", help="Name of the RL agent configuration entry point."
 )
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
+parser.add_argument(
+    "--use_pretrained_checkpoint",
+    action="store_true",
+    help="Use the pre-trained checkpoint from Nucleus.",
+)
 parser.add_argument("--real-time", action="store_true", default=False, help="Run in real-time, if possible.")
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
@@ -54,6 +54,7 @@ simulation_app = app_launcher.app
 """Rest everything follows."""
 
 import gymnasium as gym
+import os
 import time
 import torch
 
@@ -66,101 +67,28 @@ from isaaclab.envs import (
     ManagerBasedRLEnvCfg,
     multi_agent_to_single_agent,
 )
+from isaaclab.utils.assets import retrieve_file_path
 from isaaclab.utils.dict import print_dict
 
+from isaaclab_rl.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
 from isaaclab_rl.rsl_rl import RslRlBaseRunnerCfg, RslRlVecEnvWrapper, export_policy_as_jit, export_policy_as_onnx
+from isaaclab_rl.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
 
 import isaaclab_tasks  # noqa: F401
 import uwlab_tasks  # noqa: F401
+from isaaclab_tasks.utils import get_checkpoint_path
 from uwlab_tasks.utils.hydra import hydra_task_config
 
 # PLACEHOLDER: Extension template (do not remove this comment)
 
 
-def download_latest_checkpoint_from_wandb(wandb_run_path: str) -> str:
-    """Download the latest checkpoint from a wandb run.
-    
-    Args:
-        wandb_run_path: Path to wandb run in format "entity/project/run_id"
-        
-    Returns:
-        Path to the downloaded checkpoint file
-    """
-    # Parse wandb run path
-    parts = wandb_run_path.split("/")
-    if len(parts) != 3:
-        raise ValueError(f"Invalid wandb run path format. Expected 'entity/project/run_id', got: {wandb_run_path}")
-    entity, project, run_id = parts
-    
-    # Initialize wandb API
-    api = wandb.Api()
-    
-    # Get the run
-    run = api.run(f"{entity}/{project}/{run_id}")
-    print(f"[INFO] Found wandb run: {run.name} ({run.id})")
-    
-    # Find checkpoint files - look for .pt files in model/ directory or files with checkpoint/model in name
-    checkpoint_files = []
-    for file in run.files():
-        # Look for checkpoint files (typically .pt files)
-        if file.name.endswith(".pt"):
-            # Prioritize files in model/ directory or with checkpoint/model in path
-            file_path_lower = file.name.lower()
-            if (
-                "model/" in file_path_lower
-                or "checkpoint" in file_path_lower
-                or file_path_lower.startswith("model")
-                or file_path_lower.endswith("model.pt")
-            ):
-                checkpoint_files.append(file)
-    
-    # If no specific checkpoint files found, look for any .pt files
-    if not checkpoint_files:
-        checkpoint_files = [f for f in run.files() if f.name.endswith(".pt")]
-    
-    if not checkpoint_files:
-        raise ValueError(
-            f"No checkpoint files (.pt) found in wandb run {wandb_run_path}. "
-            f"Available files: {[f.name for f in list(run.files())[:10]]}"
-        )
-    
-    # Sort by name (assuming they have timestamps or version numbers) and get the latest
-    # Also prefer files with "latest" or higher numbers in the name
-    def sort_key(file):
-        name_lower = file.name.lower()
-        # Prefer files with "latest" in name
-        if "latest" in name_lower:
-            return (0, file.name)
-        # Then prefer files with numbers (assuming they're versioned)
-        import re
-        numbers = re.findall(r"\d+", file.name)
-        if numbers:
-            return (1, -int(numbers[-1]), file.name)  # Negative for reverse sort
-        return (2, file.name)
-    
-    checkpoint_files.sort(key=sort_key)
-    latest_checkpoint = checkpoint_files[0]
-    
-    print(f"[INFO] Found {len(checkpoint_files)} checkpoint file(s), using: {latest_checkpoint.name}")
-    
-    # Create temporary directory for download
-    download_dir = os.path.join(tempfile.gettempdir(), "wandb_checkpoints", run_id)
-    os.makedirs(download_dir, exist_ok=True)
-    
-    # Download the checkpoint
-    checkpoint_path = os.path.join(download_dir, latest_checkpoint.name)
-    print(f"[INFO] Downloading checkpoint to: {checkpoint_path}")
-    latest_checkpoint.download(replace=True, root=download_dir)
-    
-    return checkpoint_path
-
-
 @hydra_task_config(args_cli.task, args_cli.agent)
 def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
-    """Play with RSL-RL agent from wandb checkpoint."""
-    # Download checkpoint from wandb
-    resume_path = download_latest_checkpoint_from_wandb(args_cli.wandb_run_path)
-    
+    """Play with RSL-RL agent."""
+    # grab task name for checkpoint path
+    task_name = args_cli.task.split(":")[-1]
+    train_task_name = task_name.replace("-Play", "")
+
     # override configurations with non-hydra CLI arguments
     agent_cfg: RslRlBaseRunnerCfg = cli_args.update_rsl_rl_cfg(agent_cfg, args_cli)
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
@@ -170,10 +98,34 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     env_cfg.seed = agent_cfg.seed
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
 
+    # specify directory for logging experiments
+    log_root_path = os.path.join("logs", "rsl_rl", agent_cfg.experiment_name)
+    log_root_path = os.path.abspath(log_root_path)
+    print(f"[INFO] Loading experiment from directory: {log_root_path}")
+    if args_cli.use_pretrained_checkpoint:
+        resume_path = get_published_pretrained_checkpoint("rsl_rl", train_task_name)
+        if not resume_path:
+            print("[INFO] Unfortunately a pre-trained checkpoint is currently unavailable for this task.")
+            return
+    elif args_cli.checkpoint:
+        resume_path = retrieve_file_path(args_cli.checkpoint)
+    else:
+        resume_path = get_checkpoint_path(log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint)
+
     log_dir = os.path.dirname(resume_path)
 
     # set the log directory for the environment (works for all environment types)
     env_cfg.log_dir = log_dir
+
+    # configure recorder for dataset recording
+    import uwlab_tasks.manager_based.manipulation.reset_states.mdp as task_mdp
+    from isaaclab.managers.recorder_manager import DatasetExportMode
+    # from uwlab.utils.datasets.torch_dataset_file_handler import TorchDatasetFileHandler
+
+    env_cfg.recorders = task_mdp.DatasetRecorderManagerCfg()
+    env_cfg.recorders.dataset_export_dir_path = "./testdataset"
+    env_cfg.recorders.dataset_filename = "test.hdf5"
+    env_cfg.recorders.dataset_export_mode = DatasetExportMode.EXPORT_SUCCEEDED_ONLY
 
     # create isaac environment
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
@@ -228,9 +180,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         normalizer = None
 
     # export policy to onnx/jit
-    # export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
-    # export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
-    # export_policy_as_onnx(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
+    export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
+    export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
+    export_policy_as_onnx(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
 
     dt = env.unwrapped.step_dt
 
@@ -268,4 +220,3 @@ if __name__ == "__main__":
     main()
     # close sim app
     simulation_app.close()
-

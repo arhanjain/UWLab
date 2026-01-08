@@ -1023,8 +1023,8 @@ class MultiResetManager(ManagerTermBase):
         download_dir = os.path.join(tempfile.gettempdir(), f"rank_{rank}")
         for dataset_file in dataset_files:
             # Handle both local files, URLs, and S3 URLs (with authentication)
-            local_file_path = retrieve_file_path_with_s3_support(dataset_file, download_dir=download_dir)
-
+            # local_file_path = retrieve_file_path_with_s3_support(dataset_file, download_dir=download_dir)
+            local_file_path = retrieve_file_path(dataset_file, download_dir=download_dir)
             # Check if local file exists (after potential download)
             if not os.path.exists(local_file_path):
                 raise FileNotFoundError(f"Dataset file {dataset_file} could not be accessed or downloaded.")

@@ -177,6 +177,12 @@ def success_reward(env: ManagerBasedRLEnv, context: str = "progress_context") ->
     orientation_aligned: torch.Tensor = getattr(context_term, "orientation_aligned")
     position_aligned: torch.Tensor = getattr(context_term, "position_aligned")
     return torch.where(orientation_aligned & position_aligned, 1.0, 0.0)
+    
+def success_reward_bool(env: ManagerBasedRLEnv, context: str = "progress_context") -> torch.Tensor:
+    context_term: ManagerTermBase = env.reward_manager.get_term_cfg(context).func  # type: ignore
+    orientation_aligned: torch.Tensor = getattr(context_term, "orientation_aligned")
+    position_aligned: torch.Tensor = getattr(context_term, "position_aligned")
+    return torch.where(orientation_aligned & position_aligned, True, False)
 
 
 def action_l2_clamped(env: ManagerBasedRLEnv) -> torch.Tensor:

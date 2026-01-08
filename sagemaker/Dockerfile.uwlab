@@ -49,5 +49,5 @@ ENV PYTHONPATH=/opt/ml/code/_isaaclab/IsaacLab/source/isaaclab_rl/:$PYTHONPATH
 ENV PYTHONPATH=/opt/ml/code/_isaaclab/IsaacLab/source/isaaclab/:$PYTHONPATH
 ENV PYTHONPATH=/opt/ml/code/:$PYTHONPATH
 
-# CMD ["/bin/bash"]
-ENTRYPOINT ["/bin/bash", "/opt/ml/code/sagemaker/launch.sh"]
+CMD ["/bin/bash"]
+# ENTRYPOINT ["/bin/bash", "/opt/ml/code/sagemaker/launch.sh"]

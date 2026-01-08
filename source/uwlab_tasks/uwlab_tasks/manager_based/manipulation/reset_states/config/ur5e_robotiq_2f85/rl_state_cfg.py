@@ -20,7 +20,7 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
-from uwlab_assets import UWLAB_CLOUD_ASSETS_DIR, ARHANJAIN_CLOUD_ASSETS_DIR
+from uwlab_assets import UWLAB_CLOUD_ASSETS_DIR
 from uwlab_assets.robots.ur5e_robotiq_gripper import (
     EXPLICIT_UR5E_ROBOTIQ_2F85,
     IMPLICIT_UR5E_ROBOTIQ_2F85,
@@ -254,14 +254,14 @@ class TrainEventCfg(BaseEventCfg):
         mode="reset",
         params={
             "base_paths": [
-                f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets/ObjectAnywhereEEAnywhere",
-                f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets/ObjectRestingEEGrasped",
-                f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets/ObjectAnywhereEEGrasped",
-                f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets/ObjectPartiallyAssembledEEGrasped",
-                # f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/Resets/ObjectPairs/ObjectAnywhereEEAnywhere",
-                # f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/Resets/ObjectPairs/ObjectRestingEEGrasped",
-                # f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/Resets/ObjectPairs/ObjectAnywhereEEGrasped",
-                # f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/Resets/ObjectPairs/ObjectPartiallyAssembledEEGrasped",
+                # f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets/ObjectAnywhereEEAnywhere",
+                # f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets/ObjectRestingEEGrasped",
+                # f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets/ObjectAnywhereEEGrasped",
+                # f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets/ObjectPartiallyAssembledEEGrasped",
+                f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/Resets/ObjectPairs/ObjectAnywhereEEAnywhere",
+                f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/Resets/ObjectPairs/ObjectRestingEEGrasped",
+                f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/Resets/ObjectPairs/ObjectAnywhereEEGrasped",
+                f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/Resets/ObjectPairs/ObjectPartiallyAssembledEEGrasped",
             ],
             "probs": [0.25, 0.25, 0.25, 0.25],
             "success": "env.reward_manager.get_term_cfg('progress_context').func.success",
@@ -278,7 +278,8 @@ class EvalEventCfg(BaseEventCfg):
         mode="reset",
         params={
             "base_paths": [
-                f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets/ObjectAnywhereEEAnywhere",
+                # f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets/ObjectAnywhereEEAnywhere",
+                f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/Resets/ObjectPairs/ObjectAnywhereEEAnywhere",
             ],
             "probs": [1.0],
             "success": "env.reward_manager.get_term_cfg('progress_context').func.success",
@@ -517,6 +518,8 @@ class TerminationsCfg:
     abnormal_robot = DoneTerm(func=task_mdp.abnormal_robot_state)
 
 
+
+
 def make_insertive_object(usd_path: str):
     return RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/InsertiveObject",
@@ -690,6 +693,12 @@ class Ur5eRobotiq2f85RelCartesianOSCEvalCfg(Ur5eRobotiq2f85RlStateCfg):
                 "distribution": "uniform",
             },
         )
+
+        self.terminations.success = DoneTerm(
+            func=task_mdp.success_reward_bool,
+            time_out=True,
+            )
+
 
 
 @configclass

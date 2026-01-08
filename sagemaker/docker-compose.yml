@@ -1,0 +1,60 @@
+name: uwlab
+
+services:
+  uwlab-dev:
+    build:
+      context: ..
+      dockerfile: sagemaker/Dockerfile.uwlab
+    # Or use pre-built image:
+    # image: isaaclab-uwlab:latest
+    
+    # Enable all GPUs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    
+    # Environment variables
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - UV_LINK_MODE=copy
+      - VIRTUAL_ENV=/.venv
+      - PATH=/.venv/bin:$PATH
+      - PYTHONPATH=/opt/ml/code/source/uwlab:/opt/ml/code/source/uwlab_assets:/opt/ml/code/source/uwlab_rl:/opt/ml/code/source/uwlab_tasks:/opt/ml/code/_isaaclab/IsaacLab/source/isaaclab_rl/:/opt/ml/code/_isaaclab/IsaacLab/source/isaaclab/:/opt/ml/code/_isaaclab/IsaacLab/source/isaaclab_assets/:/opt/ml/code/_isaaclab/IsaacLab/source/isaaclab_tasks/:/opt/ml/code/:$$PYTHONPATH
+      - ACCEPT_EULA=Y
+      # Isaac Sim specific
+      - OMNI_KIT_ACCEPT_EULA=YES
+      # Display for GUI (if needed)
+      - DISPLAY=${DISPLAY:-:0}
+    
+    # Interactive terminal
+    stdin_open: true
+    tty: true
+    
+    # Working directory
+    working_dir: /opt/ml/code
+    
+    # Mount the code directory for development
+    volumes:
+      - ..:/opt/ml/code
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw  # For GUI support
+      - ~/.Xauthority:/root/.Xauthority:rw
+      - 
+    
+    # Network mode (can be changed as needed)
+    network_mode: host
+    
+    # Shared memory size (important for PyTorch dataloaders)
+    shm_size: '8gb'
+    
+    # Privileged mode for full device access (optional, use with caution)
+    # privileged: true
+    
+    # Keep container running for exec access
+    # Use: docker-compose up -d && docker-compose exec uwlab-dev bash
+    command: tail -f /dev/null
+

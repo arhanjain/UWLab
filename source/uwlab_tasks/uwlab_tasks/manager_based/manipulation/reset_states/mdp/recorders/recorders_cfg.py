@@ -14,6 +14,23 @@ from . import recorders
 # State recorders.
 ##
 
+@configclass
+class ActionRecorderCfg(RecorderTermCfg):
+    """Configuration for the action recorder term."""
+    class_type: type[RecorderTerm] = recorders.ActionRecorder
+@configclass
+class ObsRecorderCfg(RecorderTermCfg):
+    """Configuration for the obs recorder term."""
+    class_type: type[RecorderTerm] = recorders.ObsRecorder
+
+@configclass
+class DatasetRecorderManagerCfg(RecorderManagerBaseCfg):
+    """Configuration for the dataset recorder manager."""
+    record_action = ActionRecorderCfg()
+    record_obs = ObsRecorderCfg()
+
+
+
 
 # Stable state recorder.
 @configclass

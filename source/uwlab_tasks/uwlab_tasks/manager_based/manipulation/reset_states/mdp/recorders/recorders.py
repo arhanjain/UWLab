@@ -11,6 +11,7 @@ import torch
 import isaaclab.utils.math as math_utils
 from isaaclab.managers.recorder_manager import RecorderTerm
 
+from typing import Sequence
 
 class StableStateRecorder(RecorderTerm):
     def record_pre_reset(self, env_ids):
@@ -21,6 +22,46 @@ class StableStateRecorder(RecorderTerm):
             return value[env_ids]
 
         return "initial_state", extract_env_ids_values(self._env.scene.get_state(is_relative=True))
+
+class ObsRecorder(RecorderTerm):
+    def record_post_reset(self, env_ids: Sequence[int] | None) -> tuple[str | None, torch.Tensor | dict | None]:
+        return "action", self._env.action_manager.action
+
+    def record_post_step(self) -> tuple[str | None, torch.Tensor | dict | None]:
+        return "action", self._env.action_manager.action
+
+class ActionRecorder(RecorderTerm):
+    def record_post_reset(self, env_ids: Sequence[int] | None) -> tuple[str | None, torch.Tensor | dict | None]:
+        return "obs", self._env.obs_buf
+
+    def record_post_step(self) -> tuple[str | None, torch.Tensor | dict | None]:
+        return "obs", self._env.obs_buf
+
+# class AllStatesRecorder(RecorderTerm):
+#     """Recorder term that records success of the task."""
+
+#     def __init__(self, cfg, env):
+#         super().__init__(cfg, env)
+
+#     def record_post_reset(self, env_ids: Sequence[int] | None) -> tuple[str | None, torch.Tensor | dict | None]:
+#         return "states", self._capture_all_states(env_ids)
+
+#     def record_post_step(self) -> tuple[str | None, torch.Tensor | dict | None]:
+#         return "states", self._capture_all_states(None)
+
+#     def _capture_all_states(self, env_ids) -> dict:
+#         if env_ids is None:
+#             env_ids = torch.arange(self._env.num_envs, device=self._env.device)
+#         elif not isinstance(env_ids, torch.Tensor):
+#             env_ids = torch.tensor(env_ids, device=self._env.device)
+
+#         data = {}
+#         for name, asset in self._env.scene.rigid_objects.items():
+#             data[name] = asset.data.root_state_w[env_ids]
+#         for name, asset in self._env.scene.articulations.items():
+#             data[name] = asset.data.joint_pos[env_ids]
+    
+#         return data
 
 
 class GraspRelativePoseRecorder(RecorderTerm):
