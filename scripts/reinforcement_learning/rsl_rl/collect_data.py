@@ -8,7 +8,11 @@
 """Launch Isaac Sim Simulator first."""
 
 import argparse
+import os
 import sys
+import tempfile
+
+import wandb
 
 from isaaclab.app import AppLauncher
 
@@ -28,12 +32,17 @@ parser.add_argument(
     "--agent", type=str, default="rsl_rl_cfg_entry_point", help="Name of the RL agent configuration entry point."
 )
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
+parser.add_argument("--dataset_name", type=str, required=True, help="Name of the dataset.")
+parser.add_argument(
+    "--wandb_run_path", type=str, default=None, help="Wandb run path in format: entity/project/run_id"
+)
 parser.add_argument(
     "--use_pretrained_checkpoint",
     action="store_true",
     help="Use the pre-trained checkpoint from Nucleus.",
 )
 parser.add_argument("--real-time", action="store_true", default=False, help="Run in real-time, if possible.")
+parser.add_argument("--num_episodes", type=int, default=1000, help="Number of episodes to simulate.")
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
@@ -54,7 +63,6 @@ simulation_app = app_launcher.app
 """Rest everything follows."""
 
 import gymnasium as gym
-import os
 import time
 import torch
 
@@ -82,6 +90,84 @@ from uwlab_tasks.utils.hydra import hydra_task_config
 # PLACEHOLDER: Extension template (do not remove this comment)
 
 
+def download_latest_checkpoint_from_wandb(wandb_run_path: str) -> str:
+    """Download the latest checkpoint from a wandb run.
+    
+    Args:
+        wandb_run_path: Path to wandb run in format "entity/project/run_id"
+        
+    Returns:
+        Path to the downloaded checkpoint file
+    """
+    # Parse wandb run path
+    parts = wandb_run_path.split("/")
+    if len(parts) != 3:
+        raise ValueError(f"Invalid wandb run path format. Expected 'entity/project/run_id', got: {wandb_run_path}")
+    entity, project, run_id = parts
+    
+    # Initialize wandb API
+    api = wandb.Api()
+    
+    # Get the run
+    run = api.run(f"{entity}/{project}/{run_id}")
+    print(f"[INFO] Found wandb run: {run.name} ({run.id})")
+    
+    # Find checkpoint files - look for .pt files in model/ directory or files with checkpoint/model in name
+    checkpoint_files = []
+    for file in run.files():
+        # Look for checkpoint files (typically .pt files)
+        if file.name.endswith(".pt"):
+            # Prioritize files in model/ directory or with checkpoint/model in path
+            file_path_lower = file.name.lower()
+            if (
+                "model/" in file_path_lower
+                or "checkpoint" in file_path_lower
+                or file_path_lower.startswith("model")
+                or file_path_lower.endswith("model.pt")
+            ):
+                checkpoint_files.append(file)
+    
+    # If no specific checkpoint files found, look for any .pt files
+    if not checkpoint_files:
+        checkpoint_files = [f for f in run.files() if f.name.endswith(".pt")]
+    
+    if not checkpoint_files:
+        raise ValueError(
+            f"No checkpoint files (.pt) found in wandb run {wandb_run_path}. "
+            f"Available files: {[f.name for f in list(run.files())[:10]]}"
+        )
+    
+    # Sort by name (assuming they have timestamps or version numbers) and get the latest
+    # Also prefer files with "latest" or higher numbers in the name
+    def sort_key(file):
+        name_lower = file.name.lower()
+        # Prefer files with "latest" in name
+        if "latest" in name_lower:
+            return (0, file.name)
+        # Then prefer files with numbers (assuming they're versioned)
+        import re
+        numbers = re.findall(r"\d+", file.name)
+        if numbers:
+            return (1, -int(numbers[-1]), file.name)  # Negative for reverse sort
+        return (2, file.name)
+    
+    checkpoint_files.sort(key=sort_key)
+    latest_checkpoint = checkpoint_files[0]
+    
+    print(f"[INFO] Found {len(checkpoint_files)} checkpoint file(s), using: {latest_checkpoint.name}")
+    
+    # Create temporary directory for download
+    download_dir = os.path.join(tempfile.gettempdir(), "wandb_checkpoints", run_id)
+    os.makedirs(download_dir, exist_ok=True)
+    
+    # Download the checkpoint
+    checkpoint_path = os.path.join(download_dir, latest_checkpoint.name)
+    print(f"[INFO] Downloading checkpoint to: {checkpoint_path}")
+    latest_checkpoint.download(replace=True, root=download_dir)
+    
+    return checkpoint_path
+
+
 @hydra_task_config(args_cli.task, args_cli.agent)
 def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
     """Play with RSL-RL agent."""
@@ -102,7 +188,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     log_root_path = os.path.join("logs", "rsl_rl", agent_cfg.experiment_name)
     log_root_path = os.path.abspath(log_root_path)
     print(f"[INFO] Loading experiment from directory: {log_root_path}")
-    if args_cli.use_pretrained_checkpoint:
+    if args_cli.wandb_run_path:
+        resume_path = download_latest_checkpoint_from_wandb(args_cli.wandb_run_path)
+    elif args_cli.use_pretrained_checkpoint:
         resume_path = get_published_pretrained_checkpoint("rsl_rl", train_task_name)
         if not resume_path:
             print("[INFO] Unfortunately a pre-trained checkpoint is currently unavailable for this task.")
@@ -123,8 +211,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # from uwlab.utils.datasets.torch_dataset_file_handler import TorchDatasetFileHandler
 
     env_cfg.recorders = task_mdp.DatasetRecorderManagerCfg()
-    env_cfg.recorders.dataset_export_dir_path = "./testdataset"
-    env_cfg.recorders.dataset_filename = "test.hdf5"
+    env_cfg.recorders.dataset_export_dir_path = "./rollout_dataset"
+    env_cfg.recorders.dataset_filename = f"{args_cli.dataset_name}.hdf5"
     env_cfg.recorders.dataset_export_mode = DatasetExportMode.EXPORT_SUCCEEDED_ONLY
 
     # create isaac environment
@@ -180,9 +268,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         normalizer = None
 
     # export policy to onnx/jit
-    export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
-    export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
-    export_policy_as_onnx(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
+    # export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
+    # export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
+    # export_policy_as_onnx(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
 
     dt = env.unwrapped.step_dt
 
@@ -194,23 +282,30 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         start_time = time.time()
         # run everything in inference mode
         with torch.inference_mode():
+
+            # import cv2
+            # external = obs["vision"]["external_camera"].detach().cpu().numpy()[0]
+            # cv2.imshow("external", external)
+            # cv2.waitKey(1)
+
+
             # agent stepping
             actions = policy(obs)
             # env stepping
             obs, _, dones, _ = env.step(actions)
             # reset recurrent states for episodes that have terminated
-            policy_nn.reset(dones)
+            # policy_nn.reset(dones)
         if args_cli.video:
             timestep += 1
             # Exit the play loop after recording one video
             if timestep == args_cli.video_length:
                 break
 
-        # time delay for real-time evaluation
-        sleep_time = dt - (time.time() - start_time)
-        if args_cli.real_time and sleep_time > 0:
-            time.sleep(sleep_time)
-
+        if torch.any(dones):
+            new_successful_count = env.unwrapped.recorder_manager.exported_successful_episode_count
+            print(f"Successful episodes: {new_successful_count}")
+            if new_successful_count >= args_cli.num_episodes:
+                break
     # close the simulator
     env.close()
 

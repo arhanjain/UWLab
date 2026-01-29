@@ -15,6 +15,10 @@ from . import recorders
 ##
 
 @configclass
+class DROIDJointPosActionRecorderCfg(RecorderTermCfg):
+    """Configuration for the DROID joint position action recorder term."""
+    class_type: type[RecorderTerm] = recorders.DROIDJointPosActionRecorder
+@configclass
 class ActionRecorderCfg(RecorderTermCfg):
     """Configuration for the action recorder term."""
     class_type: type[RecorderTerm] = recorders.ActionRecorder
@@ -24,10 +28,23 @@ class ObsRecorderCfg(RecorderTermCfg):
     class_type: type[RecorderTerm] = recorders.ObsRecorder
 
 @configclass
+class AllStatesRecorderCfg(RecorderTermCfg):
+    """Configuration for the all states recorder term.
+    
+    Records state of every articulation and rigid body in the scene.
+    For rigid objects: root_state_w (pos, quat, lin_vel, ang_vel).
+    For articulations: root_state_w, joint_pos, joint_vel.
+    """
+    class_type: type[RecorderTerm] = recorders.AllStatesRecorder
+
+@configclass
 class DatasetRecorderManagerCfg(RecorderManagerBaseCfg):
     """Configuration for the dataset recorder manager."""
+    # record_action = ActionRecorderCfg()
+    record_droid_joint_pos_action = DROIDJointPosActionRecorderCfg()
     record_action = ActionRecorderCfg()
     record_obs = ObsRecorderCfg()
+    record_all_states = AllStatesRecorderCfg()
 
 
 

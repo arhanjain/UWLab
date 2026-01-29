@@ -22,15 +22,16 @@ from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
 from uwlab_assets import UWLAB_CLOUD_ASSETS_DIR, ARHANJAIN_CLOUD_ASSETS_DIR
-from uwlab_assets.robots.ur5e_robotiq_gripper import (
-    EXPLICIT_UR5E_ROBOTIQ_2F85,
-    IMPLICIT_UR5E_ROBOTIQ_2F85,
-    Ur5eRobotiq2f85RelativeJointPositionAction,
-)
+# from uwlab_assets.robots.ur5e_robotiq_gripper import (
+#     EXPLICIT_UR5E_ROBOTIQ_2F85,
+#     IMPLICIT_UR5E_ROBOTIQ_2F85,
+#     Ur5eRobotiq2f85RelativeJointPositionAction,
+# )
 
-from uwlab_tasks.manager_based.manipulation.reset_states.config.ur5e_robotiq_2f85.actions import (
-    Ur5eRobotiq2f85RelativeOSCAction,
+from uwlab_tasks.manager_based.manipulation.reset_states.config.droid.actions import (
+    DROIDRelativeOSCAction,
 )
+from uwlab_assets.robots.DROID import DROIDJointPositionAction, IMPLICIT_DROID, EXPLICIT_DROID, DROIDRelativeJointPositionAction, DROIDIkDeltaAction
 
 from ... import mdp as task_mdp
 
@@ -39,7 +40,7 @@ from ... import mdp as task_mdp
 class RlStateSceneCfg(InteractiveSceneCfg):
     """Scene configuration for RL state environment."""
 
-    robot = EXPLICIT_UR5E_ROBOTIQ_2F85.replace(prim_path="{ENV_REGEX_NS}/Robot")
+    robot = IMPLICIT_DROID.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
     insertive_object: RigidObjectCfg = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/InsertiveObject",
@@ -221,7 +222,7 @@ class BaseEventCfg:
         func=task_mdp.randomize_joint_parameters,
         mode="reset",
         params={
-            "asset_cfg": SceneEntityCfg("robot", joint_names=["shoulder.*", "elbow.*", "wrist.*", "finger_joint"]),
+            "asset_cfg": SceneEntityCfg("robot", joint_names=["panda_joint.*", "finger_joint"]),
             "friction_distribution_params": (0.25, 4.0),
             "armature_distribution_params": (0.25, 4.0),
             "operation": "scale",
@@ -255,10 +256,10 @@ class TrainEventCfg(BaseEventCfg):
         mode="reset",
         params={
             "base_paths": [
-                f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets/ObjectAnywhereEEAnywhere",
-                f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets/ObjectRestingEEGrasped",
-                f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets/ObjectAnywhereEEGrasped",
-                f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets/ObjectPartiallyAssembledEEGrasped",
+                f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets-DROID/ObjectAnywhereEEAnywhere",
+                f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets-DROID/ObjectRestingEEGrasped",
+                f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets-DROID/ObjectAnywhereEEGrasped",
+                f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets-DROID/ObjectPartiallyAssembledEEGrasped",
                 # f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/Resets/ObjectPairs/ObjectAnywhereEEAnywhere",
                 # f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/Resets/ObjectPairs/ObjectRestingEEGrasped",
                 # f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/Resets/ObjectPairs/ObjectAnywhereEEGrasped",
@@ -279,10 +280,10 @@ class EvalEventCfg(BaseEventCfg):
         mode="reset",
         params={
             "base_paths": [
-                # f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets/ObjectAnywhereEEAnywhere",
-                # f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets/ObjectRestingEEGrasped",
-                # f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets/ObjectAnywhereEEGrasped",
-                f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets/ObjectPartiallyAssembledEEGrasped",
+                # f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets-DROID/ObjectAnywhereEEAnywhere",
+                f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets-DROID/ObjectRestingEEGrasped",
+                # f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets-DROID/ObjectAnywhereEEGrasped",
+                # f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets-DROID/ObjectPartiallyAssembledEEGrasped",
             ],
             "probs": [1.0],
             "success": "env.reward_manager.get_term_cfg('progress_context').func.success",
@@ -481,7 +482,7 @@ class RewardsCfg:
     joint_vel = RewTerm(
         func=task_mdp.joint_vel_l2_clamped,
         weight=-1e-3,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"])},
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["panda_joint.*"])},
     )
 
     abnormal_robot = RewTerm(func=task_mdp.abnormal_robot_state, weight=-100.0)
@@ -600,7 +601,8 @@ variants = {
 class Ur5eRobotiq2f85RlStateCfg(ManagerBasedRLEnvCfg):
     scene: RlStateSceneCfg = RlStateSceneCfg(num_envs=32, env_spacing=1.5)
     observations: ObservationsCfg = ObservationsCfg()
-    actions: Ur5eRobotiq2f85RelativeOSCAction = Ur5eRobotiq2f85RelativeOSCAction()
+    # actions: Ur5eRobotiq2f85RelativeOSCAction = Ur5eRobotiq2f85RelativeOSCAction()
+    actions: DROIDJointPositionAction = DROIDJointPositionAction()
     rewards: RewardsCfg = RewardsCfg()
     terminations: TerminationsCfg = TerminationsCfg()
     events: BaseEventCfg = MISSING
@@ -609,10 +611,11 @@ class Ur5eRobotiq2f85RlStateCfg(ManagerBasedRLEnvCfg):
     variants = variants
 
     def __post_init__(self):
-        self.decimation = 12
-        self.episode_length_s = 16.0
+        # self.decimation = 12
+        self.decimation = 8
+        self.episode_length_s = 8.0
         # simulation settings
-        self.sim.dt = 1 / 120.0
+        self.sim.dt = 1 / (15.0 * self.decimation)
 
         # Contact and solver settings
         self.sim.physx.solver_type = 1
@@ -637,15 +640,15 @@ class Ur5eRobotiq2f85RlStateCfg(ManagerBasedRLEnvCfg):
 
 # Training configurations
 @configclass
-class Ur5eRobotiq2f85RelCartesianOSCTrainCfg(Ur5eRobotiq2f85RlStateCfg):
+class DROIDRelCartesianOSCTrainCfg(Ur5eRobotiq2f85RlStateCfg):
     """Training configuration for Relative Cartesian OSC action space."""
 
     events: TrainEventCfg = TrainEventCfg()
-    actions: Ur5eRobotiq2f85RelativeOSCAction = Ur5eRobotiq2f85RelativeOSCAction()
-
+    # actions: Ur5eRobotiq2f85RelativeOSCAction = Ur5eRobotiq2f85RelativeOSCAction()
+    actions: DROIDRelativeOSCAction = DROIDRelativeOSCAction()
     def __post_init__(self):
         super().__post_init__()
-        self.scene.robot = EXPLICIT_UR5E_ROBOTIQ_2F85.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        self.scene.robot = EXPLICIT_DROID.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
         self.events.randomize_robot_actuator_parameters = EventTerm(
             func=task_mdp.randomize_operational_space_controller_gains,
@@ -659,23 +662,73 @@ class Ur5eRobotiq2f85RelCartesianOSCTrainCfg(Ur5eRobotiq2f85RlStateCfg):
             },
         )
 
-
 @configclass
-class Ur5eRobotiq2f85RelJointPosTrainCfg(Ur5eRobotiq2f85RlStateCfg):
+class DROIDIkRelativeTrainCfg(Ur5eRobotiq2f85RlStateCfg):
     """Training configuration for Relative Joint Position action space."""
 
     events: TrainEventCfg = TrainEventCfg()
-    actions: Ur5eRobotiq2f85RelativeJointPositionAction = Ur5eRobotiq2f85RelativeJointPositionAction()
+    # actions: DROIDJointPositionAction = DROIDJointPositionAction()
+    actions: DROIDIkDeltaAction = DROIDIkDeltaAction()
 
     def __post_init__(self):
         super().__post_init__()
-        self.scene.robot = IMPLICIT_UR5E_ROBOTIQ_2F85.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        self.scene.robot = IMPLICIT_DROID.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        self.terminations.success = DoneTerm(
+            func=task_mdp.success_reward_bool,
+        )
+        # self.events.randomize_robot_actuator_parameters = EventTerm(
+        #     func=task_mdp.randomize_actuator_gains,
+        #     mode="reset",
+        #     params={
+        #         "asset_cfg": SceneEntityCfg("robot", joint_names=["panda_joint.*", "finger_joint"]),
+        #         "stiffness_distribution_params": (0.5, 2.0),
+        #         "damping_distribution_params": (0.5, 2.0),
+        #         "operation": "scale",
+        #         "distribution": "log_uniform",
+        #     },
+        # )
+
+@configclass
+class DROIDJointRelPosTrainCfg(Ur5eRobotiq2f85RlStateCfg):
+    """Training configuration for Relative Joint Position action space."""
+
+    events: TrainEventCfg = TrainEventCfg()
+    # actions: DROIDJointPositionAction = DROIDJointPositionAction()
+    actions: DROIDRelativeJointPositionAction = DROIDRelativeJointPositionAction()
+
+    def __post_init__(self):
+        super().__post_init__()
 
         self.events.randomize_robot_actuator_parameters = EventTerm(
             func=task_mdp.randomize_actuator_gains,
             mode="reset",
             params={
-                "asset_cfg": SceneEntityCfg("robot", joint_names=["shoulder.*", "elbow.*", "wrist.*", "finger_joint"]),
+                "asset_cfg": SceneEntityCfg("robot", joint_names=["panda_joint.*", "finger_joint"]),
+                "stiffness_distribution_params": (0.5, 2.0),
+                "damping_distribution_params": (0.5, 2.0),
+                "operation": "scale",
+                "distribution": "log_uniform",
+            },
+        )
+
+
+@configclass
+# class Ur5eRobotiq2f85RelJointPosTrainCfg(Ur5eRobotiq2f85RlStateCfg):
+class DROIDJointPosTrainCfg(Ur5eRobotiq2f85RlStateCfg):
+    """Training configuration for Relative Joint Position action space."""
+
+    events: TrainEventCfg = TrainEventCfg()
+    actions: DROIDJointPositionAction = DROIDJointPositionAction()
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.scene.robot = EXPLICIT_DROID.replace(prim_path="{ENV_REGEX_NS}/Robot")
+
+        self.events.randomize_robot_actuator_parameters = EventTerm(
+            func=task_mdp.randomize_actuator_gains,
+            mode="reset",
+            params={
+                "asset_cfg": SceneEntityCfg("robot", joint_names=["panda_joint.*", "finger_joint"]),
                 "stiffness_distribution_params": (0.5, 2.0),
                 "damping_distribution_params": (0.5, 2.0),
                 "operation": "scale",
@@ -686,15 +739,16 @@ class Ur5eRobotiq2f85RelJointPosTrainCfg(Ur5eRobotiq2f85RlStateCfg):
 
 # Evaluation configurations
 @configclass
-class Ur5eRobotiq2f85RelCartesianOSCEvalCfg(Ur5eRobotiq2f85RlStateCfg):
+class DROIDRelCartesianOSCEvalCfg(Ur5eRobotiq2f85RlStateCfg):
     """Evaluation configuration for Relative Cartesian OSC action space."""
 
     events: EvalEventCfg = EvalEventCfg()
-    actions: Ur5eRobotiq2f85RelativeOSCAction = Ur5eRobotiq2f85RelativeOSCAction()
+    actions: DROIDRelativeOSCAction = DROIDRelativeOSCAction()
 
     def __post_init__(self):
         super().__post_init__()
-        self.scene.robot = EXPLICIT_UR5E_ROBOTIQ_2F85.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        # self.scene.robot = EXPLICIT_UR5E_ROBOTIQ_2F85.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        self.scene.robot = EXPLICIT_DROID.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
         self.events.randomize_robot_actuator_parameters = EventTerm(
             func=task_mdp.randomize_operational_space_controller_gains,
@@ -707,26 +761,91 @@ class Ur5eRobotiq2f85RelCartesianOSCEvalCfg(Ur5eRobotiq2f85RlStateCfg):
                 "distribution": "uniform",
             },
         )
+        self.terminations.success = DoneTerm(
+            func=task_mdp.success_reward_bool,
+            # mode="reset",
+            # params={
+            #     # "success": "env.reward_manager.get_term_cfg('progress_context').func.success",
+            # },
+        )
+
+
+@configclass
+class SpecialEvalEventCfg(BaseEventCfg):
+    """Configuration for evaluation events."""
+
+    reset_from_reset_states = EventTerm(
+        func=task_mdp.MultiResetManager,
+        mode="reset",
+        params={
+            "base_paths": [
+                # f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets-DROID/ObjectAnywhereEEAnywhere",
+                # f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets-DROID/ObjectRestingEEGrasped",
+                # f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets-DROID/ObjectAnywhereEEGrasped",
+                # f"{ARHANJAIN_CLOUD_ASSETS_DIR}/reset_state_datasets-DROID/ObjectPartiallyAssembledEEGrasped",
+                "./reset_state_datasets-DROID-limited/ObjectAnywhereEEAnywhere",
+            ],
+            "probs": [1.0],
+            "success": "env.reward_manager.get_term_cfg('progress_context').func.success",
+        },
+    )
+@configclass
+class DROIDIkRelativeEvalCfg(Ur5eRobotiq2f85RlStateCfg):
+    """Evaluation configuration for Relative Cartesian OSC action space."""
+
+    events: SpecialEvalEventCfg = SpecialEvalEventCfg()
+    actions: DROIDIkDeltaAction = DROIDIkDeltaAction()
+    def __post_init__(self):
+        super().__post_init__()
+        self.scene.robot = IMPLICIT_DROID.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        self.terminations.success = DoneTerm(
+            func=task_mdp.success_reward_bool,
+        )
 
 
 
 
 @configclass
-class Ur5eRobotiq2f85RelJointPosEvalCfg(Ur5eRobotiq2f85RlStateCfg):
+class DROIDJointPosEvalCfg(Ur5eRobotiq2f85RlStateCfg):
     """Evaluation configuration for Relative Joint Position action space."""
 
     events: EvalEventCfg = EvalEventCfg()
-    actions: Ur5eRobotiq2f85RelativeJointPositionAction = Ur5eRobotiq2f85RelativeJointPositionAction()
+    # actions: Ur5eRobotiq2f85RelativeJointPositionAction = Ur5eRobotiq2f85RelativeJointPositionAction()
+    actions: DROIDJointPositionAction = DROIDJointPositionAction()
 
     def __post_init__(self):
         super().__post_init__()
-        self.scene.robot = IMPLICIT_UR5E_ROBOTIQ_2F85.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        self.scene.robot = IMPLICIT_DROID.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
         self.events.randomize_robot_actuator_parameters = EventTerm(
             func=task_mdp.randomize_actuator_gains,
             mode="reset",
             params={
-                "asset_cfg": SceneEntityCfg("robot", joint_names=["shoulder.*", "elbow.*", "wrist.*", "finger_joint"]),
+                "asset_cfg": SceneEntityCfg("robot", joint_names=["panda_joint.*", "finger_joint"]),
+                "stiffness_distribution_params": (0.5, 2.0),
+                "damping_distribution_params": (0.5, 2.0),
+                "operation": "scale",
+                "distribution": "log_uniform",
+            },
+        )
+
+@configclass
+class DROIDJointRelPosEvalCfg(Ur5eRobotiq2f85RlStateCfg):
+    """Evaluation configuration for Relative Joint Position action space."""
+
+    events: EvalEventCfg = EvalEventCfg()
+    # actions: Ur5eRobotiq2f85RelativeJointPositionAction = Ur5eRobotiq2f85RelativeJointPositionAction()
+    actions: DROIDRelativeJointPositionAction = DROIDRelativeJointPositionAction()
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.scene.robot = IMPLICIT_DROID.replace(prim_path="{ENV_REGEX_NS}/Robot")
+
+        self.events.randomize_robot_actuator_parameters = EventTerm(
+            func=task_mdp.randomize_actuator_gains,
+            mode="reset",
+            params={
+                "asset_cfg": SceneEntityCfg("robot", joint_names=["panda_joint.*", "finger_joint"]),
                 "stiffness_distribution_params": (0.5, 2.0),
                 "damping_distribution_params": (0.5, 2.0),
                 "operation": "scale",

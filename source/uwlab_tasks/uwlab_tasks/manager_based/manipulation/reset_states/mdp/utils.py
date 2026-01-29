@@ -98,6 +98,7 @@ def sample_object_point_cloud(
     )
 
     if hasher.num_root == 0:
+        print("no root found")
         return None
 
     replicated_env = torch.all(hasher.root_prim_hashes == hasher.root_prim_hashes[0])

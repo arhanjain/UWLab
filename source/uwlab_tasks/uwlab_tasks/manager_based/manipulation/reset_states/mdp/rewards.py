@@ -112,6 +112,14 @@ class ProgressContext(ManagerTermBase):
 
     def reset(self, env_ids: torch.Tensor | None = None) -> None:
         super().reset(env_ids)
+        ### NEW
+        self.orientation_aligned[:] = False
+        self.position_aligned[:] = False
+        self.euler_xy_distance[:] = 0.0
+        self.xyz_distance[:] = 0.0
+        self.success[:] = False
+        ### NEW
+
         self.continuous_success_counter[:] = 0
 
     def __call__(
@@ -221,3 +229,6 @@ class collision_free(ManagerTermBase):
         collision_free = self.collision_analyzer(env, all_env_ids)
 
         return collision_free
+
+def force_collision_free(env: ManagerBasedRLEnv, collision_analyzer_cfg: CollisionAnalyzerCfg) -> torch.Tensor:
+    return torch.ones(env.num_envs, device=env.device, dtype=torch.bool)

@@ -1,4 +1,9 @@
-checkpoints 
+checkpoints/
+configs/
+exports/
+*datasets/
+*.env
+./envs
 
 # C++
 **/cmake-build*/

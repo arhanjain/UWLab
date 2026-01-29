@@ -122,8 +122,11 @@ class check_grasp_success(ManagerTermBase):
 
         self.object_cfg = cfg.params.get("object_cfg")
         self.gripper_cfg = cfg.params.get("gripper_cfg")
-        self.collision_analyzer_cfg = cfg.params.get("collision_analyzer_cfg")
-        self.collision_analyzer = self.collision_analyzer_cfg.class_type(self.collision_analyzer_cfg, self._env)
+        self.collision_analyzer_cfg = cfg.params.get("collision_analyzer_cfg", None)
+        if self.collision_analyzer_cfg is not None:
+            self.collision_analyzer = self.collision_analyzer_cfg.class_type(self.collision_analyzer_cfg, self._env)
+        else:
+            self.collision_analyzer = None
         self.max_pos_deviation = cfg.params.get("max_pos_deviation")
         self.pos_z_threshold = cfg.params.get("pos_z_threshold")
         self.consecutive_stability_steps = cfg.params.get("consecutive_stability_steps", 5)
@@ -202,7 +205,7 @@ class check_grasp_success(ManagerTermBase):
 
         # Check for collisions between gripper and object
         all_env_ids = torch.arange(env.num_envs, device=env.device)
-        collision_free = self.collision_analyzer(env, all_env_ids)
+        collision_free = self.collision_analyzer(env, all_env_ids) if self.collision_analyzer is not None else torch.ones(env.num_envs, device=env.device, dtype=torch.bool)
 
         grasp_success = (
             (~abnormal_gripper_state)
@@ -343,11 +346,14 @@ class check_reset_state_success(ManagerTermBase):
             pos_below_threshold |= asset_pos[:, 2] < self.pos_z_threshold
 
         # Check for collisions between gripper and object
-        all_env_ids = torch.arange(env.num_envs, device=env.device)
-        collision_free = torch.all(
-            torch.stack([collision_analyzer(env, all_env_ids) for collision_analyzer in self.collision_analyzers]),
-            dim=0,
-        )
+        if len(self.collision_analyzers) > 0 :
+            all_env_ids = torch.arange(env.num_envs, device=env.device)
+            collision_free = torch.all(
+                torch.stack([collision_analyzer(env, all_env_ids) for collision_analyzer in self.collision_analyzers]),
+                dim=0,
+            )
+        else:
+            collision_free = torch.ones(env.num_envs, device=env.device, dtype=torch.bool)
 
         reset_success = (
             (~abnormal_gripper_state)

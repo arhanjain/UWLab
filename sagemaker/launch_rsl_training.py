@@ -32,8 +32,8 @@ GPU_MAPPER = {
 }
 QUEUE_MAPPER = {
     "us-west-2": {
-        # "ml.p5.48xlarge": "fss-ml-p5-48xlarge-us-west-2",
-        "ml.p5.48xlarge": "fss-testing-p5-48xlarge-us-west-2",
+        "ml.p5.48xlarge": "fss-ml-p5-48xlarge-us-west-2",
+        # "ml.p5.48xlarge": "fss-testing-p5-48xlarge-us-west-2",
         "ml.p5en.48xlarge": "fss-ml-p5en-48xlarge-us-west-2",
         "ml.p4de.24xlarge": "fss-ml-p4de-24xlarge-us-west-2",
         "ml.p4d.24xlarge": "fss-ml-p4d-24xlarge-us-west-2",
@@ -187,16 +187,17 @@ def generate_config_from_args(rl_args: RLArgs) -> str:
             "headless": True,
             "enable_cameras": False,
             "video": False,
+            "logger": rl_args.logger,
         },
     }
 
     # Add optional fields
-    if rl_args.experiment_name:
-        config["agent"]["experiment_name"] = rl_args.experiment_name
-    if rl_args.run_name:
-        config["agent"]["run_name"] = rl_args.run_name
-    if rl_args.logger == "wandb" and rl_args.experiment_name:
-        config["agent"]["wandb_project"] = rl_args.experiment_name
+    # if rl_args.experiment_name:
+    #     config["agent"]["experiment_name"] = rl_args.experiment_name
+    # if rl_args.run_name:
+    #     config["agent"]["run_name"] = rl_args.run_name
+    # if rl_args.logger == "wandb" and rl_args.experiment_name:
+    #     config["agent"]["wandb_project"] = rl_args.experiment_name
 
     # Write to temp file
     config_dir = Path("configs/generated")
@@ -249,7 +250,11 @@ def main(args: LaunchRSLTrainingArgs | None = None):
             f"docker run --rm --gpus all "
             f"-v {os.path.abspath(config_path)}:/opt/ml/code/{config_path} "
             f"{env_vars_str} "
+            "-v ~/.aws:/root/.aws:ro "
             f"{image} "
+            f"python "
+            f"scripts/reinforcement_learning/rsl_rl/train.py"
+            f" --config {config_path}"
         )
 
         print(f"Running: {docker_cmd}\n")
@@ -294,8 +299,8 @@ def main(args: LaunchRSLTrainingArgs | None = None):
         "SM_USE_RESERVED_CAPACITY": "1",
         "NCCL_DEBUG": "INFO",
         "ISAAC_HEADLESS": "1",  # Run Isaac Sim in headless mode
-        "SAGEMAKER_PROGRAM": "scripts/reinforcement_learning/rsl_rl/train.py",
-        "EXTRA_FLAGS": f"\"{args.rl_args.extra}\"",
+        "MY_SCRIPT": "scripts/reinforcement_learning/rsl_rl/train.py",
+        "EXTRA_FLAGS": args.rl_args.extra,
         "CONFIG_PATH": f"/opt/ml/code/{config_path}"
     }
     environment.update(load_secrets())
@@ -308,32 +313,13 @@ def main(args: LaunchRSLTrainingArgs | None = None):
     num_gpus = GPU_MAPPER.get(instance_type_full, 8)
 
 
-    estimator = PyTorch(
-        entry_point="scripts/reinforcement_learning/rsl_rl/train.py",
-        # entry_point="torchrun --nnodes=1 --nproc_per_node=8 scripts/reinforcement_learning/rsl_rl/train.py",
-        image_uri=image,
-        role=role,
-        hyperparameters=hyperparameters,
-        instance_count=args.instance_count,
-        instance_type=INSTANCE_MAPPER[args.instance_type],
-        sagemaker_session=sagemaker_session,
-        base_job_name=base_job_name,
-        environment=environment,
-        max_run=args.max_run_days * 24 * 60 * 60,
-        volume_size=args.volume_size,
-        checkpoint_local_path=checkpoint_local_path,
-        input_mode="FastFile",
-        keep_alive_period_in_seconds=5 * 60,  # Keep instance alive for 5 minutes after job completion
-        distribution={"torch_distributed": {"enabled": True}},
-        # distribution=None
-    )
-
-
-    # # Create generic estimator
-    # # Note: We're not using hyperparameters since we build the full command in container_entry_point
-    # estimator = Estimator(
+    # estimator = PyTorch(
+    #     entry_point="sagemaker/launch.sh",
+    #     # entry_point="scripts/reinforcement_learning/rsl_rl/train.py",
+    #     # entry_point="torchrun --nnodes=1 --nproc_per_node=8 scripts/reinforcement_learning/rsl_rl/train.py",
     #     image_uri=image,
     #     role=role,
+    #     hyperparameters=hyperparameters,
     #     instance_count=args.instance_count,
     #     instance_type=INSTANCE_MAPPER[args.instance_type],
     #     sagemaker_session=sagemaker_session,
@@ -344,8 +330,29 @@ def main(args: LaunchRSLTrainingArgs | None = None):
     #     checkpoint_local_path=checkpoint_local_path,
     #     input_mode="FastFile",
     #     keep_alive_period_in_seconds=5 * 60,  # Keep instance alive for 5 minutes after job completion
-    #     container_entry_point=container_entry_point,
+    #     distribution={"torch_distributed": {"enabled": True}},
+    #     # distribution=None
     # )
+
+
+    # # Create generic estimator
+    # # Note: We're not using hyperparameters since we build the full command in container_entry_point
+    estimator = Estimator(
+        entry_point="sagemaker/launch.sh",
+        image_uri=image,
+        role=role,
+        instance_count=args.instance_count,
+        instance_type=INSTANCE_MAPPER[args.instance_type],
+        sagemaker_session=sagemaker_session,
+        base_job_name=base_job_name,
+        environment=environment,
+        max_run=args.max_run_days * 24 * 60 * 60,
+        volume_size=args.volume_size,
+        checkpoint_local_path=checkpoint_local_path,
+        input_mode="FastFile",
+        keep_alive_period_in_seconds=5 * 60,  # Keep instance alive for 5 minutes after job completion
+        # container_entry_point=container_entry_point,
+    )
 
     print(f"\nStarting training job: {job_name}")
     print(f"Instance type: {INSTANCE_MAPPER[args.instance_type]}")

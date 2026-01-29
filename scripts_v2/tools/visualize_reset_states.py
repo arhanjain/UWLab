@@ -64,7 +64,14 @@ def main(env_cfg, agent_cfg) -> None:
         func=task_mdp.MultiResetManager,
         mode="reset",
         params={
-            "base_paths": [args_cli.dataset_dir],
+            "base_paths": [
+                args_cli.dataset_dir
+                # f"{args_cli.dataset_dir}/ObjectAnywhereEEAnywhere",
+                # f"{args_cli.dataset_dir}/ObjectRestingEEGrasped",
+                # f"{args_cli.dataset_dir}/ObjectAnywhereEEGrasped",
+                # f"{args_cli.dataset_dir}/ObjectPartiallyAssembledEEGrasped",
+                ],
+            # "probs": [0.25, 0.25, 0.25, 0.25],
             "probs": [1.0],
             "success": "env.reward_manager.get_term_cfg('progress_context').func.success",
         },
@@ -93,8 +100,9 @@ def main(env_cfg, agent_cfg) -> None:
             # Step the simulation
             for _ in range(5):
                 action = torch.zeros(env.action_space.shape, device=env.device, dtype=torch.float32)
+                # action = env.scene["robot"].data.joint_pos[:, :8]
+
                 action[gripper_mask, -1] = -1.0
-                action[~gripper_mask, -1] = 1.0
                 env.step(action)
             for _ in range(5):
                 env.unwrapped.sim.step()

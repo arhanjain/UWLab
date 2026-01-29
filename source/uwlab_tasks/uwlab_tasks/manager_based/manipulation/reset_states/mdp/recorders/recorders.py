@@ -23,45 +23,87 @@ class StableStateRecorder(RecorderTerm):
 
         return "initial_state", extract_env_ids_values(self._env.scene.get_state(is_relative=True))
 
-class ObsRecorder(RecorderTerm):
-    def record_post_reset(self, env_ids: Sequence[int] | None) -> tuple[str | None, torch.Tensor | dict | None]:
-        return "action", self._env.action_manager.action
 
+class DROIDJointPosActionRecorder(RecorderTerm):
     def record_post_step(self) -> tuple[str | None, torch.Tensor | dict | None]:
-        return "action", self._env.action_manager.action
+        arm_joint_pos = self._env.scene["robot"].data.joint_pos[..., :7]
+        gripper_action = self._env.action_manager.action[..., -1:]
+        full_action = torch.cat([arm_joint_pos, gripper_action], dim=-1)
+        return "action/droid_joint_pos_action", full_action
+
 
 class ActionRecorder(RecorderTerm):
-    def record_post_reset(self, env_ids: Sequence[int] | None) -> tuple[str | None, torch.Tensor | dict | None]:
-        return "obs", self._env.obs_buf
+    # def record_post_reset(self, env_ids: Sequence[int] | None) -> tuple[str | None, torch.Tensor | dict | None]:
+    #     return "action", self._env.action_manager.action
 
     def record_post_step(self) -> tuple[str | None, torch.Tensor | dict | None]:
-        return "obs", self._env.obs_buf
+        return "action/raw", self._env.action_manager.action
 
-# class AllStatesRecorder(RecorderTerm):
-#     """Recorder term that records success of the task."""
+class ObsRecorder(RecorderTerm):
+    def record_post_reset(self, env_ids: Sequence[int] | None) -> tuple[str | None, torch.Tensor | dict | None]:
+        return "obs", self.to_cpu(self._env.obs_buf)
 
-#     def __init__(self, cfg, env):
-#         super().__init__(cfg, env)
+    def record_post_step(self) -> tuple[str | None, torch.Tensor | dict | None]:
+        return "obs", self.to_cpu(self._env.obs_buf)
 
-#     def record_post_reset(self, env_ids: Sequence[int] | None) -> tuple[str | None, torch.Tensor | dict | None]:
-#         return "states", self._capture_all_states(env_ids)
+    def to_cpu(self, obs_buf: dict) -> dict:
+        # many images remaining on GPU can cause memory issues
+        new_obs_buf = {}
+        for key in obs_buf.keys():
+            if "vision" in key:
+                new_obs_buf[key] = {}
+                for k, v in obs_buf[key].items():
+                    new_obs_buf[key][k] = v.detach().cpu()
+            else:
+                new_obs_buf[key] = obs_buf[key]
+        return new_obs_buf
 
-#     def record_post_step(self) -> tuple[str | None, torch.Tensor | dict | None]:
-#         return "states", self._capture_all_states(None)
-
-#     def _capture_all_states(self, env_ids) -> dict:
-#         if env_ids is None:
-#             env_ids = torch.arange(self._env.num_envs, device=self._env.device)
-#         elif not isinstance(env_ids, torch.Tensor):
-#             env_ids = torch.tensor(env_ids, device=self._env.device)
-
-#         data = {}
-#         for name, asset in self._env.scene.rigid_objects.items():
-#             data[name] = asset.data.root_state_w[env_ids]
-#         for name, asset in self._env.scene.articulations.items():
-#             data[name] = asset.data.joint_pos[env_ids]
+class AllStatesRecorder(RecorderTerm):
+    """Recorder term that records state of every articulation and rigid body in the scene.
     
-#         return data
+    For rigid objects, records root_state_w (position, quaternion, linear velocity, angular velocity).
+    For articulations, records root_state_w, joint_pos, and joint_vel.
+    """
+
+    def record_post_reset(self, env_ids: Sequence[int] | None) -> tuple[str | None, torch.Tensor | dict | None]:
+        return "states", self._capture_all_states(env_ids)
+
+    def record_post_step(self) -> tuple[str | None, torch.Tensor | dict | None]:
+        return "states", self._capture_all_states(None)
+
+    
+    def _capture_all_states(self, env_ids) -> dict:
+        if env_ids is None:
+            env_ids = torch.arange(self._env.num_envs, device=self._env.device)
+
+        def extract_env_ids_values(value):
+            nonlocal env_ids
+            if isinstance(value, dict):
+                return {k: extract_env_ids_values(v) for k, v in value.items()}
+            return value[env_ids]
+
+        return extract_env_ids_values(self._env.scene.get_state(is_relative=True))
+    # def _capture_all_states(self, env_ids) -> dict:
+    #     if env_ids is None:
+    #         env_ids = slice(None)
+
+    #     data = {}
+        
+    #     # Record rigid object states (root_state_w: pos(3) + quat(4) + lin_vel(3) + ang_vel(3) = 13)
+    #     for name, asset in self._env.scene.rigid_objects.items():
+    #         data[name] = {
+    #             "root_state_w": asset.data.root_state_w[env_ids].clone(),
+    #         }
+        
+    #     # Record articulation states (root_state_w, joint_pos, joint_vel)
+    #     for name, asset in self._env.scene.articulations.items():
+    #         data[name] = {
+    #             "root_state_w": asset.data.root_state_w[env_ids].clone(),
+    #             "joint_pos": asset.data.joint_pos[env_ids].clone(),
+    #             "joint_vel": asset.data.joint_vel[env_ids].clone(),
+    #         }
+    
+    #     return data
 
 
 class GraspRelativePoseRecorder(RecorderTerm):

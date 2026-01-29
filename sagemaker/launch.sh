@@ -16,14 +16,14 @@ fi
 echo "Using config file: $CONFIG_PATH"
 
 # Check if distributed training is requested (multi-GPU)
-if [ "$NUM_GPUS" -gt 1 ] && [ ! -z "$SAGEMAKER_PROGRAM" ]; then
+if [ "$NUM_GPUS" -gt 1 ] && [ ! -z "$MY_SCRIPT" ]; then
     echo "Launching with torchrun for $NUM_GPUS GPUs"
 
-    CMD="torchrun --standalone --nnodes=1 --nproc_per_node=$NUM_GPUS $SAGEMAKER_PROGRAM --distributed --config $CONFIG_PATH"
+    CMD="torchrun --standalone --nnodes=1 --nproc_per_node=$NUM_GPUS $MY_SCRIPT --distributed --config $CONFIG_PATH"
 
     echo "Executing: $CMD"
     exec $CMD
 else
     echo "Running single-GPU mode"
-    exec python $SAGEMAKER_PROGRAM --config $CONFIG_PATH
+    exec python $MY_SCRIPT --config $CONFIG_PATH
 fi

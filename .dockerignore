@@ -4,8 +4,11 @@ checkpoints/
 grasp_datasets/
 partial_assembly_datasets/
 reset_state_datasets/
+reset_state_datasets-DROID/
 exports/
 wandb/
+# envs/
+rollout_dataset/
 # ignore .git related folders
 .git/
 .github/

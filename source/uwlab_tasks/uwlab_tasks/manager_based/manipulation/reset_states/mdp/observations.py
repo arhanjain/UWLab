@@ -13,6 +13,15 @@ from isaaclab.managers import ManagerTermBase, ObservationTermCfg, SceneEntityCf
 from uwlab_tasks.manager_based.manipulation.reset_states.assembly_keypoints import Offset
 from uwlab_tasks.manager_based.manipulation.reset_states.mdp import utils
 
+def selected_joint_pos(
+    env: ManagerBasedEnv,
+    asset_cfg: SceneEntityCfg,
+    joint_names: list[str],
+):
+    asset: RigidObject | Articulation = env.scene[asset_cfg.name]
+    # ids = [asset.cfg.dof_names.index(joint_name) for joint_name in joint_names]
+    ids = [asset.data.joint_names.index(joint_name) for joint_name in joint_names]
+    return asset.data.joint_pos[:, ids].view(env.num_envs, -1)
 
 def target_asset_pose_in_root_asset_frame(
     env: ManagerBasedEnv,

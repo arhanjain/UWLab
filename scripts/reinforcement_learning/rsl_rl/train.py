@@ -53,6 +53,8 @@ if extra_flags:
     hydra_args.extend(shlex.split(extra_flags))
 
 # Load config file early if provided to get task and other training params
+# Store globally so we can access it in main() for wandb config
+config_data_global = None
 if args_cli.config is not None:
     import yaml
     config_path = args_cli.config
@@ -64,11 +66,11 @@ if args_cli.config is not None:
 
     print(f"[INFO] Loading config from: {config_path}")
     with open(config_path, "r") as f:
-        config_data = yaml.safe_load(f)
+        config_data_global = yaml.safe_load(f)
 
     # Override args_cli with training config values
-    if "training" in config_data:
-        training_config = config_data["training"]
+    if "training" in config_data_global:
+        training_config = config_data_global["training"]
         for key, value in training_config.items():
             if hasattr(args_cli, key):
                 # Only override if CLI arg wasn't explicitly set
@@ -195,28 +197,6 @@ def apply_config_overrides(cfg, overrides: dict, prefix: str = ""):
 @hydra_task_config(args_cli.task, args_cli.agent)
 def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
     """Train with RSL-RL agent."""
-    # load and apply config file overrides if provided
-    if args_cli.config is not None:
-        config_path = args_cli.config
-        if not os.path.isabs(config_path):
-            config_path = os.path.abspath(config_path)
-
-        if not os.path.exists(config_path):
-            raise FileNotFoundError(f"Config file not found: {config_path}")
-
-        logger.info(f"Loading hyperparameters from config file: {config_path}")
-        with open(config_path, "r") as f:
-            config_overrides = yaml.safe_load(f)
-
-        # Apply overrides to agent_cfg and env_cfg
-        if "agent" in config_overrides:
-            logger.info("Applying agent configuration overrides...")
-            apply_config_overrides(agent_cfg, config_overrides["agent"], prefix="agent.")
-
-        if "env" in config_overrides:
-            logger.info("Applying environment configuration overrides...")
-            apply_config_overrides(env_cfg, config_overrides["env"], prefix="env.")
-
     # override configurations with non-hydra CLI arguments
     agent_cfg = cli_args.update_rsl_rl_cfg(agent_cfg, args_cli)
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
@@ -301,6 +281,32 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         runner = DistillationRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
     else:
         raise ValueError(f"Unsupported runner class: {agent_cfg.class_name}")
+    runner._prepare_logging_writer() # initialize wandb config
+    
+    # update wandb config with training config data if wandb is being used
+    if args_cli.config is not None and agent_cfg.logger == "wandb" and config_data_global is not None:
+        try:
+            import wandb
+            # Check if wandb is initialized (should be after _prepare_logging_writer)
+            wandb_run = getattr(wandb, "run", None)
+            if wandb_run is not None:
+                # Only update with the "training" section from the config
+                training_config = config_data_global.get("training", {})
+                if not getattr(wandb_run, "resumed", False):
+                    wandb_config = getattr(wandb, "config", None)
+                    if wandb_config is not None:
+                        if training_config:
+                            logger.info("Updating wandb config with training config data...")
+                            wandb_config.update({"config_yaml": {"training": training_config}})
+                            logger.info("Successfully updated wandb config with training config data")
+                        # also add the extra flags to the wandb config
+                        if args_cli.extra_flags is not None:
+                            wandb_config.update({"extra_flags": args_cli.extra_flags})
+        except ImportError:
+            logger.warning("wandb is not installed, skipping wandb config update")
+        except Exception as e:
+            logger.warning(f"Failed to update wandb config: {e}")
+
     # write git state to logs
     runner.add_git_repo_to_log(__file__)
     # load the checkpoint

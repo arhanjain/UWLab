@@ -19,11 +19,11 @@ from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
 from uwlab_assets import UWLAB_CLOUD_ASSETS_DIR
-from uwlab_assets.robots.ur5e_robotiq_gripper import EXPLICIT_UR5E_ROBOTIQ_2F85
-
-from uwlab_tasks.manager_based.manipulation.reset_states.config.ur5e_robotiq_2f85.actions import (
-    Ur5eRobotiq2f85RelativeOSCAction,
-)
+# from uwlab_assets.robots.ur5e_robotiq_gripper import EXPLICIT_UR5E_ROBOTIQ_2F85
+# from uwlab_tasks.manager_based.manipulation.reset_states.config.ur5e_robotiq_2f85.actions import (
+#     Ur5eRobotiq2f85RelativeOSCAction,
+# )
+from uwlab_assets.robots.DROID import IMPLICIT_DROID, DROIDJointPositionAction
 
 from ... import mdp as task_mdp
 
@@ -32,7 +32,8 @@ from ... import mdp as task_mdp
 class ResetStatesSceneCfg(InteractiveSceneCfg):
     """Scene configuration for reset states environment."""
 
-    robot = EXPLICIT_UR5E_ROBOTIQ_2F85.replace(prim_path="{ENV_REGEX_NS}/Robot")
+    # robot = EXPLICIT_UR5E_ROBOTIQ_2F85.replace(prim_path="{ENV_REGEX_NS}/Robot")
+    robot = IMPLICIT_DROID.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
     insertive_object: RigidObjectCfg = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/InsertiveObject",
@@ -196,6 +197,8 @@ class ObjectAnywhereEEAnywhereEventCfg(ResetStatesBaseEventCfg):
         params={
             "pose_range": {
                 "x": (0.3, 0.55),
+                # "x": (0.2, 0.47),
+                # "y": (-0.25, 0.25),
                 "y": (-0.1, 0.5),
                 "z": (0.0, 0.3),
                 "roll": (-np.pi, np.pi),
@@ -224,7 +227,8 @@ class ObjectAnywhereEEAnywhereEventCfg(ResetStatesBaseEventCfg):
                 "yaw": (np.pi / 2, 3 * np.pi / 2),
             },
             "robot_ik_cfg": SceneEntityCfg(
-                "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"
+                # "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"
+                "robot", joint_names=["panda_joint.*"], body_names=["robotiq_base_link"]
             ),
         },
     )
@@ -236,7 +240,7 @@ class ObjectRestingEEGraspedEventCfg(ResetStatesBaseEventCfg):
         func=task_mdp.MultiResetManager,
         mode="reset",
         params={
-            "base_paths": [f"./reset_state_datasets/ObjectAnywhereEEAnywhere"],
+            "base_paths": [f"./reset_state_datasets-DROID/ObjectAnywhereEEAnywhere"],
             "probs": [1.0],
         },
     )
@@ -248,7 +252,8 @@ class ObjectRestingEEGraspedEventCfg(ResetStatesBaseEventCfg):
             "base_path": f"./grasp_datasets",
             "fixed_asset_cfg": SceneEntityCfg("insertive_object"),
             "robot_ik_cfg": SceneEntityCfg(
-                "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"
+                # "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"
+                "robot", joint_names=["panda_joint.*"], body_names=["robotiq_base_link"]
             ),
             "gripper_cfg": SceneEntityCfg("robot", joint_names=["finger_joint", ".*right.*", ".*left.*"]),
             "pose_range_b": {
@@ -291,7 +296,8 @@ class ObjectAnywhereEEGraspedEventCfg(ResetStatesBaseEventCfg):
             "base_path": f"./grasp_datasets",
             "fixed_asset_cfg": SceneEntityCfg("insertive_object"),
             "robot_ik_cfg": SceneEntityCfg(
-                "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"
+                # "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"
+                "robot", joint_names=["panda_joint.*"], body_names=["robotiq_base_link"]
             ),
             "gripper_cfg": SceneEntityCfg("robot", joint_names=["finger_joint", ".*right.*", ".*left.*"]),
             "pose_range_b": {
@@ -344,7 +350,8 @@ class ObjectPartiallyAssembledEEAnywhereEventCfg(ResetStatesBaseEventCfg):
                 "yaw": (np.pi / 2, 3 * np.pi / 2),
             },
             "robot_ik_cfg": SceneEntityCfg(
-                "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"
+                # "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"
+                "robot", joint_names=["panda_joint.*"], body_names=["robotiq_base_link"]
             ),
         },
     )
@@ -377,7 +384,8 @@ class ObjectPartiallyAssembledEEGraspedEventCfg(ResetStatesBaseEventCfg):
             "base_path": f"./grasp_datasets",
             "fixed_asset_cfg": SceneEntityCfg("insertive_object"),
             "robot_ik_cfg": SceneEntityCfg(
-                "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"
+                # "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"
+                "robot", joint_names=["panda_joint.*"], body_names=["robotiq_base_link"]
             ),
             "gripper_cfg": SceneEntityCfg("robot", joint_names=["finger_joint", ".*right.*", ".*left.*"]),
             "pose_range_b": {
@@ -518,14 +526,15 @@ variants = {
 
 
 @configclass
-class UR5eRobotiq2f85ResetStatesCfg(ManagerBasedRLEnvCfg):
+class DROIDResetStatesCfg(ManagerBasedRLEnvCfg):
     """Configuration for reset states environment with UR5e Robotiq 2F85 gripper."""
 
     scene: ResetStatesSceneCfg = ResetStatesSceneCfg(num_envs=1, env_spacing=1.5)
     events: ResetStatesBaseEventCfg = MISSING
     terminations: ResetStatesTerminationCfg = ResetStatesTerminationCfg()
     observations: ResetStatesObservationsCfg = ResetStatesObservationsCfg()
-    actions: Ur5eRobotiq2f85RelativeOSCAction = Ur5eRobotiq2f85RelativeOSCAction()
+    # actions: Ur5eRobotiq2f85RelativeOSCAction = Ur5eRobotiq2f85RelativeOSCAction()
+    actions: DROIDJointPositionAction = DROIDJointPositionAction()
     rewards: ResetStatesRewardsCfg = ResetStatesRewardsCfg()
     viewer: ViewerCfg = ViewerCfg(eye=(2.0, 0.0, 0.75), origin_type="world", env_index=0, asset_name="robot")
     variants = variants
@@ -558,7 +567,7 @@ class UR5eRobotiq2f85ResetStatesCfg(ManagerBasedRLEnvCfg):
 
 
 @configclass
-class ObjectAnywhereEEAnywhereResetStatesCfg(UR5eRobotiq2f85ResetStatesCfg):
+class ObjectAnywhereEEAnywhereResetStatesCfg(DROIDResetStatesCfg):
     events: ObjectAnywhereEEAnywhereEventCfg = ObjectAnywhereEEAnywhereEventCfg()
 
     def __post_init__(self):
@@ -567,7 +576,7 @@ class ObjectAnywhereEEAnywhereResetStatesCfg(UR5eRobotiq2f85ResetStatesCfg):
 
 
 @configclass
-class ObjectRestingEEGraspedResetStatesCfg(UR5eRobotiq2f85ResetStatesCfg):
+class ObjectRestingEEGraspedResetStatesCfg(DROIDResetStatesCfg):
     events: ObjectRestingEEGraspedEventCfg = ObjectRestingEEGraspedEventCfg()
 
     def __post_init__(self):
@@ -576,7 +585,7 @@ class ObjectRestingEEGraspedResetStatesCfg(UR5eRobotiq2f85ResetStatesCfg):
 
 
 @configclass
-class ObjectAnywhereEEGraspedResetStatesCfg(UR5eRobotiq2f85ResetStatesCfg):
+class ObjectAnywhereEEGraspedResetStatesCfg(DROIDResetStatesCfg):
     events: ObjectAnywhereEEGraspedEventCfg = ObjectAnywhereEEGraspedEventCfg()
 
     def __post_init__(self):
@@ -585,7 +594,7 @@ class ObjectAnywhereEEGraspedResetStatesCfg(UR5eRobotiq2f85ResetStatesCfg):
 
 
 @configclass
-class ObjectPartiallyAssembledEEAnywhereResetStatesCfg(UR5eRobotiq2f85ResetStatesCfg):
+class ObjectPartiallyAssembledEEAnywhereResetStatesCfg(DROIDResetStatesCfg):
     events: ObjectPartiallyAssembledEEAnywhereEventCfg = ObjectPartiallyAssembledEEAnywhereEventCfg()
 
     def __post_init__(self):
@@ -594,7 +603,7 @@ class ObjectPartiallyAssembledEEAnywhereResetStatesCfg(UR5eRobotiq2f85ResetState
 
 
 @configclass
-class ObjectPartiallyAssembledEEGraspedResetStatesCfg(UR5eRobotiq2f85ResetStatesCfg):
+class ObjectPartiallyAssembledEEGraspedResetStatesCfg(DROIDResetStatesCfg):
     events: ObjectPartiallyAssembledEEGraspedEventCfg = ObjectPartiallyAssembledEEGraspedEventCfg()
 
     def __post_init__(self):

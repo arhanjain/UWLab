@@ -36,10 +36,9 @@ RUN apt-get update && apt-get install -y build-essential gcc g++ \
 
 RUN echo "yes" >> /.venv/lib/python3.11/site-packages/isaacsim/kit/EULA_ACCEPTED
 
-# COPY . /opt/ml/code
 COPY . /opt/ml/code
+COPY sagemaker/launch.sh /opt/ml/code/launch.sh
 WORKDIR /opt/ml/code
-# WORKDIR /opt/ml/code
 
 ENV PYTHONPATH=/opt/ml/code/source/uwlab:$PYTHONPATH
 ENV PYTHONPATH=/opt/ml/code/source/uwlab_assets:$PYTHONPATH

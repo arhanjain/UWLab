@@ -168,12 +168,13 @@ class PartialAssembliesRewardsCfg:
     """Configuration for partial assemblies rewards."""
 
     collision_free = RewTerm(
+        # func=task_mdp.force_collision_free,
         func=task_mdp.collision_free,
         params={
             "collision_analyzer_cfg": task_mdp.CollisionAnalyzerCfg(
                 num_points=1024,
-                max_dist=0.5,
-                min_dist=-0.0005,
+                max_dist=5.0,
+                min_dist=-1.0,
                 asset_cfg=SceneEntityCfg("insertive_object"),
                 obstacle_cfgs=[SceneEntityCfg("receptive_object")],
             )

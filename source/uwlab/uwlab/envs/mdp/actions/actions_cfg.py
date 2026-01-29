@@ -23,6 +23,23 @@ from uwlab.envs.mdp.actions import (
 ##
 # Task-space Actions.
 ##
+@configclass
+class TransformedOneShotDifferentialIKActionCfg(DifferentialInverseKinematicsActionCfg):
+    """Configuration for One-Shot Differential IK action term.
+
+    Unlike standard IK which recomputes at every physics step (500 Hz), this computes IK
+    ONCE per policy step (10 Hz) and holds the joint target fixed. This makes it equivalent
+    to JointPos in terms of control structure, eliminating distillation gap.
+
+    Supports coordinate frame transformations via action_root_offset for policies trained
+    in a transformed frame (e.g., 180° flipped base for real-robot alignment).
+    """
+
+    class_type: type[ActionTerm] = task_space_actions.TransformedOneShotDifferentialIKAction
+
+    action_root_offset: DifferentialInverseKinematicsActionCfg.OffsetCfg | None = None
+    """Offset for the action root frame (e.g., 180° flip for real-robot alignment)."""
+
 
 
 @configclass

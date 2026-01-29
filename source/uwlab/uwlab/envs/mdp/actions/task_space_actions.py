@@ -13,6 +13,7 @@ import isaaclab.utils.math as math_utils
 import omni.log
 from isaaclab.assets.articulation import Articulation
 from isaaclab.managers.action_manager import ActionTerm
+from isaaclab.envs.mdp.actions.task_space_actions import DifferentialInverseKinematicsAction
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedEnv
@@ -243,3 +244,130 @@ class MultiConstraintDifferentialInverseKinematicsAction(ActionTerm):
             # Reshape back
             jacobian = jacobian_flat.view(self.num_envs, len(self._body_idx), 6, -1)
         return jacobian
+
+class TransformedOneShotDifferentialIKAction(DifferentialInverseKinematicsAction):
+    """One-shot Differential IK action term with coordinate frame transformation.
+
+    Unlike standard DifferentialInverseKinematicsAction which recomputes IK at every physics
+    step (e.g., 500 Hz), this action computes IK ONCE per policy step and holds the joint
+    target fixed. This makes it equivalent to JointPos in terms of control structure,
+    eliminating the distillation gap when training a JointPos student from an IK expert.
+
+    The workflow is:
+
+    1. Receive 6-DOF Cartesian commands [x, y, z, rx, ry, rz] in transformed frame
+    2. Apply coordinate frame transformation to standard robot base frame
+    3. Compute IK ONCE to get joint target (not recomputed during decimation)
+    4. Hold joint target fixed for all physics steps (PD actuator tracks it)
+
+    This exposes ``delta_joint_pos`` which is the relative joint position action - exactly
+    what a JointPos policy would need to output to achieve the same behavior.
+    """
+
+    cfg: actions_cfg.TransformedOneShotDifferentialIKActionCfg
+    """The configuration of the action term."""
+
+    def __init__(self, cfg: actions_cfg.TransformedOneShotDifferentialIKActionCfg, env: ManagerBasedEnv):
+        # Initialize the parent IK action
+        super().__init__(cfg, env)
+
+        # Setup action root offset transformation
+        if self.cfg.action_root_offset is not None:
+            self._action_root_offset_pos = torch.tensor(cfg.action_root_offset.pos, device=self.device).repeat(
+                self.num_envs, 1
+            )
+            self._action_root_offset_quat = torch.tensor(cfg.action_root_offset.rot, device=self.device).repeat(
+                self.num_envs, 1
+            )
+        else:
+            self._action_root_offset_pos = None
+            self._action_root_offset_quat = None
+
+        # Buffers for one-shot IK: joint target computed once per step
+        self._joint_pos_des = torch.zeros(self.num_envs, self._num_joints, device=self.device)
+        self._delta_joint_pos = torch.zeros(self.num_envs, self._num_joints, device=self.device)
+
+    @property
+    def delta_joint_pos(self) -> torch.Tensor:
+        return self._delta_joint_pos
+
+    def process_actions(self, actions: torch.Tensor):
+        """Process raw actions: transform coordinates, apply scaling, compute IK, store joint target.
+
+        Args:
+            actions: The raw actions in shape (num_envs, 6) representing [x, y, z, rx, ry, rz].
+        """
+        # Store raw actions
+        self._raw_actions[:] = actions
+
+        # Transform actions from offset frame to standard frame (if offset is configured)
+        actions_standard = self._transform_actions_to_standard_frame(actions)
+
+        # Apply scaling and clipping
+        self._processed_actions[:] = actions_standard * self._scale
+        if self.cfg.clip is not None:
+            self._processed_actions = torch.clamp(
+                self._processed_actions, min=self._clip[:, :, 0], max=self._clip[:, :, 1]
+            )
+
+        # Obtain quantities from simulation
+        ee_pos_curr, ee_quat_curr = self._compute_frame_pose()
+        joint_pos = self._asset.data.joint_pos[:, self._joint_ids]
+
+        # Set command into controller
+        self._ik_controller.set_command(self._processed_actions, ee_pos_curr, ee_quat_curr)
+
+        # Compute IK ONCE and store the joint target (not recomputed in apply_actions)
+        self._compute_joint_target(ee_pos_curr, ee_quat_curr, joint_pos)
+
+    def apply_actions(self):
+        """Apply the pre-computed joint position target to the articulation.
+
+        Unlike the parent class which recomputes IK every physics step, this simply
+        applies the joint target that was computed once in process_actions().
+        """
+        self._asset.set_joint_position_target(self._joint_pos_des, self._joint_ids)
+
+    def _transform_actions_to_standard_frame(self, actions: torch.Tensor) -> torch.Tensor:
+        """Transform actions from offset coordinate frame to standard robot base frame.
+
+        Args:
+            actions: The raw actions in offset frame, shape (num_envs, 6).
+
+        Returns:
+            The transformed actions in standard frame, shape (num_envs, 6).
+        """
+        if self._action_root_offset_pos is not None and self._action_root_offset_quat is not None:
+            # Extract position and rotation deltas
+            delta_pos_offset = actions[:, :3]  # [x, y, z]
+            delta_rot_offset = actions[:, 3:6]  # [rx, ry, rz] in axis-angle
+
+            # Get rotation matrix from offset-robot-base to standard-robot-base
+            # The action_root_offset defines standard -> offset, so we need the inverse
+            R_offset_to_standard = math_utils.matrix_from_quat(math_utils.quat_inv(self._action_root_offset_quat))
+
+            # Transform position delta: rotate from offset coordinates to standard coordinates
+            delta_pos_standard = torch.bmm(R_offset_to_standard, delta_pos_offset.unsqueeze(-1)).squeeze(-1)
+
+            # Transform rotation delta (axis-angle): rotate the axis from offset coordinates to standard
+            delta_rot_standard = torch.bmm(R_offset_to_standard, delta_rot_offset.unsqueeze(-1)).squeeze(-1)
+
+            return torch.cat([delta_pos_standard, delta_rot_standard], dim=-1)
+        else:
+            return actions
+
+    def _compute_joint_target(self, ee_pos: torch.Tensor, ee_quat: torch.Tensor, joint_pos: torch.Tensor):
+        """Compute and store the joint position target using IK.
+
+        Args:
+            ee_pos: Current end-effector position in shape (num_envs, 3).
+            ee_quat: Current end-effector orientation in shape (num_envs, 4).
+            joint_pos: Current joint positions in shape (num_envs, num_joints).
+        """
+        if ee_quat.norm() != 0:
+            jacobian = self._compute_frame_jacobian()
+            self._joint_pos_des[:] = self._ik_controller.compute(ee_pos, ee_quat, jacobian, joint_pos)
+            self._delta_joint_pos[:] = self._joint_pos_des - joint_pos
+        else:
+            self._joint_pos_des[:] = joint_pos.clone()
+            self._delta_joint_pos[:] = 0.0

@@ -111,12 +111,18 @@ def main(env_cfg, agent_cfg) -> None:
     env = cast(ManagerBasedRLEnv, gym.make(args_cli.task, cfg=env_cfg)).unwrapped
     env.reset()
 
+
     # Run reset state sampling
     num_reset_conditions_evaluated = 0
     current_successful_reset_conditions = 0
-    actions = torch.zeros(env.action_space.shape, device=env.device, dtype=torch.float32)
+    # actions = torch.zeros(env.action_space.shape, device=env.device, dtype=torch.float32)
+    actions = env.scene["robot"].data.joint_pos[:, :8]
+    actions[:, -1] = -1.0
+    # actions = torch.zeros_like(env.scene["robot"].data.joint_pos[:, :7])
     if "ObjectAnywhereEEGrasped" in args_cli.task or "ObjectRestingEEGrasped" in args_cli.task:
+        print('ello')
         actions[:, -1] = -1.0
+        # actions[:, -1] = 1.0
     else:
         actions[:, -1] = (
             torch.randint(0, 2, (env.num_envs,), device=env.device, dtype=torch.float32) * 2 - 1
@@ -128,18 +134,24 @@ def main(env_cfg, agent_cfg) -> None:
     start_time = time.time()
 
     while current_successful_reset_conditions < args_cli.num_reset_states:
-        # Step environment (this will evaluate grasps in parallel across environments)
+        # Step environment (this will evaluate grasps "{in parallel across environments)
+        # print(actions)
         _, _, terminated, truncated, _ = env.step(actions)
         dones = terminated | truncated
         done_idx = torch.where(dones)[0]
 
         # Reset actions for environments that are done
-        if done_idx.numel() > 0 and not (
-            "ObjectAnywhereEEGrasped" in args_cli.task or "ObjectRestingEEGrasped" in args_cli.task
-        ):
-            actions[done_idx, -1] = (
-                torch.randint(0, 2, (done_idx.numel(),), device=env.device, dtype=torch.float32) * 2 - 1
-            )
+        # actions[done_idx, :7] = torch.zeros_like(env.scene["robot"].data.joint_pos[done_idx, :7])
+        actions[done_idx, :8] = env.scene["robot"].data.joint_pos[done_idx, :8]
+        actions[:, -1] = -1.0
+        # actions[done_idx, -1] = -1.0
+        # actions[done_idx, -1] = 1.0
+        # if done_idx.numel() > 0 and not (
+        #     "ObjectAnywhereEEGrasped" in args_cli.task or "ObjectRestingEEGrasped" in args_cli.task
+        # ):
+        #     actions[done_idx, -1] = (
+        #         torch.randint(0, 2, (done_idx.numel(),), device=env.device, dtype=torch.float32) * 2 - 1
+        #     )
 
         # Update progress based on successful reset conditions
         new_successful_count = env.recorder_manager.exported_successful_episode_count

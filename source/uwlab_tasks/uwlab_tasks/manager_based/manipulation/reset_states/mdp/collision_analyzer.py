@@ -52,6 +52,7 @@ class CollisionAnalyzer:
         self.body_ids = []
         self.local_pts = []
         for i, body_name in enumerate(body_names):
+            print("sampling for body: ", body_name)
             # start = time.perf_counter()
             prim = get_first_matching_child_prim(
                 self.asset.cfg.prim_path.replace(".*", "0", 1),  # we use the 0th env prim as template
@@ -63,6 +64,7 @@ class CollisionAnalyzer:
                 prim_path_pattern=str(prim.GetPath()).replace("env_0", "env_.*", 1),
                 device=env.device,
             )
+            print("sampled local points: ", local_pts.shape if local_pts is not None else "None")
             if local_pts is not None:
                 self.local_pts.append(local_pts.view(env.num_envs, 1, cfg.num_points, 3))
                 self.body_ids.append(self.asset.body_names.index(body_name))

@@ -170,6 +170,12 @@ class grasp_sampling_event(ManagerTermBase):
         # Get vertices
         points_attr = usd_mesh.GetPointsAttr()
         vertices = torch.tensor(points_attr.Get(), dtype=torch.float32)
+        # get scale from the USD and apply to the vertices
+        # scale = torch.tensor(usd_mesh.GetScaleAttr().Get(), dtype=torch.float32)
+        scale = torch.tensor((0.16, 0.13, 0.15), dtype=torch.float32).unsqueeze(0)
+        vertices = vertices * scale
+        # vertices = vertices * scale
+
         max_distance = torch.max(torch.norm(vertices, dim=1))
         # if the max distance is greater than 1.0, then the mesh is in mm
         if max_distance > 1.0:
@@ -1023,8 +1029,8 @@ class MultiResetManager(ManagerTermBase):
         download_dir = os.path.join(tempfile.gettempdir(), f"rank_{rank}")
         for dataset_file in dataset_files:
             # Handle both local files, URLs, and S3 URLs (with authentication)
-            # local_file_path = retrieve_file_path_with_s3_support(dataset_file, download_dir=download_dir)
-            local_file_path = retrieve_file_path(dataset_file, download_dir=download_dir)
+            local_file_path = retrieve_file_path_with_s3_support(dataset_file, download_dir=download_dir)
+            # local_file_path = retrieve_file_path(dataset_file, download_dir=download_dir)
             # Check if local file exists (after potential download)
             if not os.path.exists(local_file_path):
                 raise FileNotFoundError(f"Dataset file {dataset_file} could not be accessed or downloaded.")

@@ -207,7 +207,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         raise ValueError(f"Unsupported runner class: {agent_cfg.class_name}")
     runner.load(resume_path)
 
-    # obtain the trained policy for inference
+    # obtain the trained policy for inferences
     policy = runner.get_inference_policy(device=env.unwrapped.device)
 
     # extract the neural network module
@@ -238,26 +238,41 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     obs = env.get_observations()
     timestep = 0
     # simulate environment
+    # video = []
+    # import mediapy as mp
+    # import numpy as np
     while simulation_app.is_running():
         start_time = time.time()
         # run everything in inference mode
         with torch.inference_mode():
+
+            # if "vision" in obs:
+            #     frame = obs["vision"]["external_camera"]
+            #     wrist_frame = obs["vision"]["wrist_camera"]
+            #     numpyframe = frame.cpu().numpy()[0]
+            #     numpywrist_frame = wrist_frame.cpu().numpy()[0]
+            #     both_frames = np.concatenate([numpyframe, numpywrist_frame], axis=1)
+            #     video.append(both_frames)
             # agent stepping
             actions = policy(obs)
             # env stepping
             obs, _, dones, _ = env.step(actions)
+            # print(f"success: {env.unwrapped.termination_manager.get_term('success').any()}")
             # reset recurrent states for episodes that have terminated
             policy_nn.reset(dones)
         if args_cli.video:
             timestep += 1
             # Exit the play loop after recording one video
-            if timestep == args_cli.video_length:
-                break
+            # if timestep == args_cli.video_length:
+            #     mp.write_video(f"video.mp4", video, fps=15)
+            #     video = []
+            #     print(f"saved video at {timestep}")
+            break
 
         # time delay for real-time evaluation
-        sleep_time = dt - (time.time() - start_time)
-        if args_cli.real_time and sleep_time > 0:
-            time.sleep(sleep_time)
+        # sleep_time = dt - (time.time() - start_time)
+        # if args_cli.real_time and sleep_time > 0:
+        #     time.sleep(sleep_time)
 
     # close the simulator
     env.close()
