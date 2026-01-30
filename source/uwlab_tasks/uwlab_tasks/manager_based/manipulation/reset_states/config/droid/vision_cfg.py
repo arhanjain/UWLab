@@ -187,15 +187,20 @@ class DROIDIkRelativeVisionEvalCfg(DROIDIkRelativeEvalCfg):
         self.scene.external_camera = TiledCameraCfg(
             prim_path="{ENV_REGEX_NS}/external_camera",
             offset=TiledCameraCfg.OffsetCfg(
-                pos = (0.09827, -0.42967, 0.39172),
-                rot = (0.85097, 0.44271, -0.13042, -0.25069),
+                # pos = (0.09827, -0.42967, 0.39172),
+                # rot = (0.85097, 0.44271, -0.13042, -0.25069),
+                pos = (-0.05277, -0.55604, 0.47632),
+                rot = (0.80826, 0.45584, -0.18309, -0.32465),
                 convention="opengl"
             ),
             data_types=["rgb"],
             spawn=sim_utils.PinholeCameraCfg(
-                    focal_length=1.0476,
-                    horizontal_aperture=2.5452,
-                    vertical_aperture=1.4721,
+                focal_length = 0.8,
+                horizontal_aperture = 1.0,
+
+                    # focal_length=1.0476,
+                    # horizontal_aperture=2.5452,
+                vertical_aperture=1.4721,
             ),
             height=720,
             width=1280,
