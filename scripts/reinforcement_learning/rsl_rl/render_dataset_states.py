@@ -49,6 +49,15 @@ parser.add_argument(
     default=True,
     help="Compute and write vision observations back to the HDF5 file.",
 )
+parser.add_argument(
+    "--obs_dump_dir",
+    type=str,
+    default=None,
+    help=(
+        "If set and write_observations is enabled, dump per-episode vision observations "
+        "to this directory as .npz files instead of modifying the HDF5 file."
+    ),
+)
 
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
@@ -285,64 +294,86 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                 if not simulation_app.is_running():
                     break
 
-            # Write vision observations back to HDF5 if requested
+            # Write or dump vision observations if requested
             if args_cli.write_observations and len(vision_observations) > 0:
-                print(f"  Writing vision observations to HDF5...")
-                try:
-                    # Close the dataset file handler first to release the file lock
-                    dataset_file_handler.close()
-                    
-                    # Now open in read-write mode
-                    with h5py.File(args_cli.hdf5_file, "r+") as h5f:
-                        episode_path = f"data/{episode_name}"
-                        if episode_path not in h5f:
-                            print(f"  Warning: Episode path {episode_path} not found in HDF5, skipping write")
-                        else:
-                            # Create or access obs group
-                            if "obs" not in h5f[episode_path]:
-                                h5f[episode_path].create_group("obs")
-                            
-                            obs_group = h5f[episode_path]["obs"]
-                            
-                            # Create or access vision group
-                            if "vision" not in obs_group:
-                                obs_group.create_group("vision")
-                            
-                            vision_group = obs_group["vision"]
-                            
-                            # Write each camera's observations
-                            for camera_name, obs_list in vision_observations.items():
-                                # Stack observations into array (num_steps, height, width, channels)
-                                obs_array = np.stack(obs_list, axis=0)
-                                
-                                # Convert to uint8 if needed (assuming images are in [0, 255] range)
-                                if obs_array.dtype != np.uint8:
-                                    if obs_array.max() <= 1.0:
-                                        obs_array = (obs_array * 255).astype(np.uint8)
-                                    else:
-                                        obs_array = obs_array.astype(np.uint8)
-                                
-                                # Write or overwrite the dataset
-                                if camera_name in vision_group:
-                                    del vision_group[camera_name]
-                                vision_group.create_dataset(camera_name, data=obs_array, compression="gzip")
-                                
-                                print(f"    Wrote {camera_name}: shape {obs_array.shape}")
-                            
-                            h5f.flush()
-                            print(f"  Successfully wrote vision observations for episode {episode_name}")
-                    
-                    # Reopen the dataset file handler for next episode
-                    dataset_file_handler.open(args_cli.hdf5_file)
-                except Exception as e:
-                    print(f"  Error writing observations to HDF5: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    # Try to reopen the dataset file handler even if write failed
+                # If an obs dump directory is provided, write intermediate .npz instead of touching HDF5.
+                if args_cli.obs_dump_dir is not None:
                     try:
+                        os.makedirs(args_cli.obs_dump_dir, exist_ok=True)
+                        out_path = os.path.join(args_cli.obs_dump_dir, f"{episode_name}_vision.npz")
+                        # Stack lists into arrays for each camera
+                        stacked = {}
+                        for camera_name, obs_list in vision_observations.items():
+                            obs_array = np.stack(obs_list, axis=0)
+                            if obs_array.dtype != np.uint8:
+                                if obs_array.max() <= 1.0:
+                                    obs_array = (obs_array * 255).astype(np.uint8)
+                                else:
+                                    obs_array = obs_array.astype(np.uint8)
+                            stacked[camera_name] = obs_array
+                        np.savez_compressed(out_path, **stacked)
+                        print(f"  Wrote intermediate observations to {out_path}")
+                    except Exception as e:
+                        print(f"  Error writing intermediate observations for episode {episode_name}: {e}")
+                        import traceback
+                        traceback.print_exc()
+                else:
+                    print(f"  Writing vision observations to HDF5...")
+                    try:
+                        # Close the dataset file handler first to release the file lock
+                        dataset_file_handler.close()
+                        
+                        # Now open in read-write mode
+                        with h5py.File(args_cli.hdf5_file, "r+") as h5f:
+                            episode_path = f"data/{episode_name}"
+                            if episode_path not in h5f:
+                                print(f"  Warning: Episode path {episode_path} not found in HDF5, skipping write")
+                            else:
+                                # Create or access obs group
+                                if "obs" not in h5f[episode_path]:
+                                    h5f[episode_path].create_group("obs")
+                                
+                                obs_group = h5f[episode_path]["obs"]
+                                
+                                # Create or access vision group
+                                if "vision" not in obs_group:
+                                    obs_group.create_group("vision")
+                                
+                                vision_group = obs_group["vision"]
+                                
+                                # Write each camera's observations
+                                for camera_name, obs_list in vision_observations.items():
+                                    # Stack observations into array (num_steps, height, width, channels)
+                                    obs_array = np.stack(obs_list, axis=0)
+                                    
+                                    # Convert to uint8 if needed (assuming images are in [0, 255] range)
+                                    if obs_array.dtype != np.uint8:
+                                        if obs_array.max() <= 1.0:
+                                            obs_array = (obs_array * 255).astype(np.uint8)
+                                        else:
+                                            obs_array = obs_array.astype(np.uint8)
+                                    
+                                    # Write or overwrite the dataset
+                                    if camera_name in vision_group:
+                                        del vision_group[camera_name]
+                                    vision_group.create_dataset(camera_name, data=obs_array, compression="gzip")
+                                    
+                                    print(f"    Wrote {camera_name}: shape {obs_array.shape}")
+                                
+                                h5f.flush()
+                                print(f"  Successfully wrote vision observations for episode {episode_name}")
+                        
+                        # Reopen the dataset file handler for next episode
                         dataset_file_handler.open(args_cli.hdf5_file)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        print(f"  Error writing observations to HDF5: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        # Try to reopen the dataset file handler even if write failed
+                        try:
+                            dataset_file_handler.open(args_cli.hdf5_file)
+                        except Exception:
+                            pass
 
             rendered_count += 1
             print(f"  Completed rendering episode {episode_idx}")
