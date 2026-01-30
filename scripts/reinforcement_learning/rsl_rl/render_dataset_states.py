@@ -219,6 +219,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                                     state_dict["articulation"][asset_name][key] = torch.from_numpy(value[step_idx:step_idx+1]).to(env.device)
                                 else:
                                     state_dict["articulation"][asset_name][key] = torch.tensor([value[step_idx]], device=env.device)
+
+                                # 10x position scaling
+                                if key in ["root_pose"]:
+                                    state_dict["articulation"][asset_name][key][..., :3] = state_dict["articulation"][asset_name][key][..., :3] * 10.0
                 
                 # Extract rigid object states
                 if "rigid_object" in states_data:
@@ -234,6 +238,17 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                                     state_dict["rigid_object"][asset_name][key] = torch.from_numpy(value[step_idx:step_idx+1]).to(env.device)
                                 else:
                                     state_dict["rigid_object"][asset_name][key] = torch.tensor([value[step_idx]], device=env.device)
+                                
+                                # 10x position scaling
+                                if key in ["root_pose"]:
+                                    state_dict["rigid_object"][asset_name][key][..., :3] = state_dict["rigid_object"][asset_name][key][..., :3] * 10.0
+                                #     print(f"10x position scaling for {asset_name} {key}")
+                                #     print(state_dict["rigid_object"][asset_name][key])
+
+                            # 10x position scaling
+                            # if key in ["root_pose"]:
+                            #     state_dict["rigid_object"][asset_name][key] = state_dict["rigid_object"][asset_name][key] * 10.0
+                
                 
                 # Reset environment to this state
                 env.reset_to(state_dict, env_ids=env_ids, is_relative=True)
